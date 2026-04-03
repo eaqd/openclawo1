@@ -1,9 +1,17 @@
+# Custom OpenClaw image (alternative to the official ghcr.io/openclaw/openclaw)
+# Use this if you need to build from source or customize the installation.
+# By default, docker-compose.yml uses the official image instead.
+#
+# To use this Dockerfile, change docker-compose.yml openclaw service to:
+#   build:
+#     context: .
+#     dockerfile: Dockerfile
+
 FROM node:24-slim
 
 LABEL maintainer="openclawo1"
 LABEL description="OpenClaw AI Assistant with Ollama integration"
 
-# Avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
@@ -22,22 +30,17 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Install OpenClaw globally
 RUN npm install -g openclaw
 
-# Create non-root user for security
-RUN groupadd -r openclaw && useradd -r -g openclaw -m -d /home/openclaw openclaw
+# Create non-root user
+RUN groupadd -r openclaw && useradd -r -g openclaw -m -d /home/node openclaw
 
-# Create directories for config, workspace, and skills
-RUN mkdir -p /home/openclaw/.openclaw/skills \
-             /home/openclaw/.openclaw/workspace \
-    && chown -R openclaw:openclaw /home/openclaw
+# Create directories
+RUN mkdir -p /home/node/.openclaw/skills \
+             /home/node/.openclaw/workspace \
+    && chown -R openclaw:openclaw /home/node
 
-# Copy default configuration
-COPY --chown=openclaw:openclaw config/ /home/openclaw/.openclaw/
-
-# Switch to non-root user
 USER openclaw
-WORKDIR /home/openclaw
+WORKDIR /home/node
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD openclaw --version || exit 1
 

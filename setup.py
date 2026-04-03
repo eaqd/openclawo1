@@ -18,6 +18,7 @@ import time
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
 ENV_EXAMPLE = os.path.join(SCRIPT_DIR, ".env.example")
+CONFIG_SRC = os.path.join(SCRIPT_DIR, "config", "openclaw.json5")
 
 DEFAULT_MODEL = "qwen2.5-coder:3b"
 
@@ -62,6 +63,21 @@ def check_prerequisites():
     print("  Docker daemon ....... OK")
 
 
+def check_disk_space():
+    """Warn about disk space requirements."""
+    print("\nDisk space check...")
+    statvfs = os.statvfs(SCRIPT_DIR)
+    free_gb = (statvfs.f_bavail * statvfs.f_frsize) / (1024 ** 3)
+    print(f"  Available: {free_gb:.1f} GB")
+    if free_gb < 5:
+        print("  WARNING: Less than 5GB free. The default model needs ~2.5GB.")
+        response = input("  Continue anyway? [y/N]: ").strip().lower()
+        if response != "y":
+            sys.exit(0)
+    else:
+        print("  OK (model needs ~2.5GB)")
+
+
 def configure_env():
     """Create .env file from user input."""
     if os.path.exists(ENV_FILE):
@@ -74,39 +90,49 @@ def configure_env():
     print("\n── Configuration ──────────────────────────────────────")
 
     # Ollama model
-    model = input(f"Ollama model [{DEFAULT_MODEL}]: ").strip()
+    print(f"\nRecommended models for 8GB RAM:")
+    print(f"  qwen2.5-coder:3b    Best for coding (~2.5GB)")
+    print(f"  phi3:mini           General purpose (~2.3GB)")
+    print(f"  deepseek-coder:1.3b Ultra-light coding (~1GB)")
+    model = input(f"\nOllama model [{DEFAULT_MODEL}]: ").strip()
     if not model:
         model = DEFAULT_MODEL
 
     # Telegram
     print("\nTelegram bot setup (optional, press Enter to skip):")
-    telegram_token = input("  Bot token (from @BotFather): ").strip()
+    print("  Get a bot token from @BotFather: https://t.me/BotFather")
+    telegram_token = input("  Bot token: ").strip()
     telegram_users = ""
     if telegram_token:
+        print("  Get your user ID from @userinfobot: https://t.me/userinfobot")
         telegram_users = input("  Allowed user IDs (comma-separated): ").strip()
 
     # Log level
-    log_level = input(f"Log level [info]: ").strip() or "info"
+    log_level = input(f"\nLog level [info]: ").strip() or "info"
 
     # Write .env
     with open(ENV_FILE, "w") as f:
+        f.write(f"# OpenClaw Sandbox Configuration\n")
         f.write(f"OLLAMA_MODEL={model}\n")
+        f.write(f"OPENCLAW_VERSION=latest\n")
         f.write(f"TELEGRAM_BOT_TOKEN={telegram_token}\n")
         f.write(f"TELEGRAM_ALLOWED_USERS={telegram_users}\n")
         f.write(f"OPENCLAW_LOG_LEVEL={log_level}\n")
+        f.write(f"OLLAMA_HOST_PORT=11434\n")
+        f.write(f"TZ=UTC\n")
 
     print(f"\nConfiguration saved to {ENV_FILE}")
 
 
 def build_and_start():
-    """Build images and start containers."""
-    print("\n── Building & Starting Services ───────────────────────")
+    """Pull images and start containers."""
+    print("\n── Pulling Images & Starting Services ────────────────")
 
-    print("Building OpenClaw image...")
-    run("docker compose build --no-cache openclaw")
+    print("Pulling Docker images (this may take a few minutes)...")
+    run("docker compose pull ollama")
 
-    print("Starting services...")
-    run("docker compose up -d")
+    print("Starting Ollama...")
+    run("docker compose up -d ollama")
 
     print("Waiting for Ollama to be healthy...")
     for i in range(30):
@@ -124,7 +150,6 @@ def build_and_start():
 
 def pull_model():
     """Pull the configured Ollama model."""
-    # Read model from .env
     model = DEFAULT_MODEL
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE) as f:
@@ -139,12 +164,34 @@ def pull_model():
     print(f"  Model '{model}' is ready!")
 
 
+def copy_config():
+    """Copy OpenClaw config into the data volume."""
+    print("\n── Configuring OpenClaw ───────────────────────────────")
+    # Start OpenClaw briefly to create the volume, then copy config in
+    run("docker compose up -d openclaw")
+    time.sleep(3)
+
+    # Copy config files into the container's config directory
+    run(f"docker compose cp config/openclaw.json5 openclaw:/home/node/.openclaw/openclaw.json5")
+    run(f"docker compose cp config/telegram.json5 openclaw:/home/node/.openclaw/telegram.json5")
+
+    # Restart OpenClaw to pick up the config
+    run("docker compose restart openclaw")
+    print("  Configuration applied!")
+
+
+def start_all():
+    """Start remaining services."""
+    print("\n── Starting All Services ─────────────────────────────")
+    run("docker compose up -d")
+    print("  All services started!")
+
+
 def verify():
     """Verify all services are running."""
     print("\n── Verification ──────────────────────────────────────")
 
-    result = run("docker compose ps --format 'table {{.Name}}\t{{.Status}}'",
-                 check=False, capture=True)
+    result = run("docker compose ps", check=False, capture=True)
     if result.returncode == 0:
         print(result.stdout)
 
@@ -164,7 +211,7 @@ def print_instructions():
 ══════════════════════════════════════════════════════════
 
   Usage:
-    Interactive shell:  docker compose exec openclaw openclaw
+    Interactive mode:   docker compose exec openclaw openclaw
     View logs:          docker compose logs -f openclaw
     Stop all:           docker compose down
     Restart:            docker compose restart
@@ -179,6 +226,7 @@ def print_instructions():
   Add custom skills:
     Place skill directories in ./skills/
     Each skill needs a SKILL.md file with YAML frontmatter.
+    Browse skills: https://github.com/openclaw/clawhub
 
   Telegram:
     If configured, message your bot on Telegram to interact.
@@ -194,9 +242,12 @@ def main():
     print("╚══════════════════════════════════════════════════════╝\n")
 
     check_prerequisites()
+    check_disk_space()
     configure_env()
     build_and_start()
     pull_model()
+    copy_config()
+    start_all()
     verify()
     print_instructions()
 

@@ -7,7 +7,7 @@ services:
     container_name: openclaw-ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
     volumes:
       - ollama-data:/root/.ollama
     networks:
@@ -16,8 +16,15 @@ services:
       resources:
         limits:
           memory: 6g
+      # Uncomment for NVIDIA GPU support:
+      # resources:
+      #   reservations:
+      #     devices:
+      #       - driver: nvidia
+      #         count: all
+      #         capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 15s
       timeout: 5s
       start_period: 10s
@@ -32,47 +39,56 @@ services:
         condition: service_healthy
     networks:
       - claw-net
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         echo "Pulling model: ${OLLAMA_MODEL:-qwen2.5-coder:3b}..."
-        ollama pull ${OLLAMA_MODEL:-qwen2.5-coder:3b} --host http://ollama:11434
+        ollama pull ${OLLAMA_MODEL:-qwen2.5-coder:3b}
         echo "Model ready!"
     restart: "no"
 
   # ── OpenClaw: AI Assistant ─────────────────────────────────
   openclaw:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/openclaw/openclaw:${OPENCLAW_VERSION:-latest}
     container_name: openclaw-app
     restart: unless-stopped
     depends_on:
       ollama:
         condition: service_healthy
     environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_API_KEY=ollama-local
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:3b}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
       - OPENCLAW_LOG_LEVEL=${OPENCLAW_LOG_LEVEL:-info}
+      - TZ=${TZ:-UTC}
     volumes:
-      - openclaw-config:/home/openclaw/.openclaw
-      - openclaw-workspace:/home/openclaw/.openclaw/workspace
-      - ./skills:/home/openclaw/.openclaw/skills:ro
+      - openclaw-data:/home/node/.openclaw
+      - openclaw-workspace:/home/node/.openclaw/workspace
+      - ./skills:/home/node/.openclaw/skills:ro
     networks:
       - claw-net
     deploy:
       resources:
         limits:
-          memory: 4g
+          memory: 2g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
     stdin_open: true
     tty: true
 
 volumes:
   ollama-data:
     driver: local
-  openclaw-config:
+  openclaw-data:
     driver: local
   openclaw-workspace:
     driver: local
