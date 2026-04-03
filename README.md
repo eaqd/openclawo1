@@ -1,52 +1,78 @@
 # OpenClaw Sandbox
 
-A fully sandboxed [OpenClaw](https://github.com/openclaw/openclaw) deployment running on **Ollama** for free, local LLM inference. No API keys required.
+A fully working [OpenClaw](https://github.com/openclaw/openclaw) deployment running on **Ollama** for free, local LLM inference. No API keys required. Two setup modes: **Docker** (sandboxed) or **Direct** (bare-metal).
 
 ## What You Get
 
-- **OpenClaw** AI assistant in a Docker container
-- **Ollama** running locally with `qwen2.5-coder:3b` (optimized for 8GB RAM)
+- **OpenClaw 2026.4.x** AI assistant with 52 bundled skills
+- **Ollama** for free local LLM inference (no cloud, no API keys)
 - **Telegram bot** integration (optional)
-- **Terminal/CLI** access
-- **Skills system** with support for custom and community skills
-- Auto-restart, persistent data, resource limits — VPS-ready
-
-## Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) with Docker Compose v2
-- Python 3.8+
-- 8GB RAM minimum (6GB allocated to Ollama)
+- **Terminal UI** + Gateway web interface
+- **Skills system** with ClawHub community skills
+- Auto-restart, persistent data — VPS-ready
 
 ## Quick Start
 
+### Option A: Direct Install (recommended for VPS)
+
 ```bash
-# 1. Clone this repo
 git clone https://github.com/eaqd/openclawo1.git
 cd openclawo1
+chmod +x setup-direct.sh
+./setup-direct.sh
+```
 
-# 2. Run setup (checks Docker, configures .env, builds, pulls models)
+This installs Ollama + OpenClaw directly, pulls a model, and configures everything.
+
+### Option B: Docker (sandboxed)
+
+```bash
+git clone https://github.com/eaqd/openclawo1.git
+cd openclawo1
 python3 setup.py
+```
 
-# 3. Interact with OpenClaw
-docker compose exec openclaw openclaw
+Requires Docker with Docker Compose v2.
+
+## Usage
+
+```bash
+# Start everything
+python3 scripts/manage.py start
+
+# Interactive terminal UI
+OLLAMA_API_KEY=ollama-local openclaw tui
+
+# Run the gateway (web interface at http://localhost:18789)
+OLLAMA_API_KEY=ollama-local openclaw gateway
+
+# Send a one-off message
+OLLAMA_API_KEY=ollama-local openclaw agent --message "hello"
+
+# Check status
+python3 scripts/manage.py status
+
+# View logs
+python3 scripts/manage.py logs
 ```
 
 ## Management
 
 ```bash
-python3 scripts/manage.py start      # Start all services
+python3 scripts/manage.py start      # Start Ollama + Gateway
 python3 scripts/manage.py stop       # Stop all services
 python3 scripts/manage.py restart    # Restart services
-python3 scripts/manage.py status     # Health check + resource usage
+python3 scripts/manage.py status     # Health check + models
 python3 scripts/manage.py logs       # Tail logs (Ctrl+C to exit)
-python3 scripts/manage.py shell      # Shell into OpenClaw container
-python3 scripts/manage.py update     # Update to latest OpenClaw
+python3 scripts/manage.py update     # Update OpenClaw
 python3 scripts/manage.py models     # Manage Ollama models
 ```
 
+The management CLI auto-detects whether you're running Docker or direct mode.
+
 ## Ollama Models
 
-Default: `qwen2.5-coder:3b` — best coding model for low-end hardware.
+Default: `qwen2.5-coder:3b` — best coding model for 8GB RAM.
 
 ```bash
 # List installed models
@@ -55,7 +81,6 @@ python3 scripts/manage.py models list
 # Pull a different model
 python3 scripts/manage.py models pull phi3:mini
 python3 scripts/manage.py models pull llama3.2:3b
-python3 scripts/manage.py models pull deepseek-coder:1.3b
 
 # Remove a model
 python3 scripts/manage.py models remove phi3:mini
@@ -76,55 +101,66 @@ python3 scripts/manage.py models remove phi3:mini
 2. Create a new bot with `/newbot`
 3. Copy the bot token
 4. Get your Telegram user ID (message [@userinfobot](https://t.me/userinfobot))
-5. Add to `.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=your-bot-token-here
+5. Configure:
+   ```bash
+   # Direct mode
+   openclaw config set channels.telegram.enabled true
+   openclaw config set channels.telegram.botToken "YOUR_TOKEN"
+   openclaw config set channels.telegram.allowFrom '["YOUR_USER_ID"]'
+
+   # Docker mode — add to .env
+   TELEGRAM_BOT_TOKEN=your-token
    TELEGRAM_ALLOWED_USERS=your-user-id
    ```
 6. Restart: `python3 scripts/manage.py restart`
 
 ## Custom Skills
 
-Place skill directories in `./skills/`. Each skill needs a `SKILL.md` file:
+Browse and install community skills from [ClawHub](https://github.com/openclaw/clawhub):
 
-```
-skills/
-  my-skill/
-    SKILL.md
-    (optional scripts, data files)
+```bash
+OLLAMA_API_KEY=ollama-local openclaw skills list          # See available skills
+OLLAMA_API_KEY=ollama-local openclaw skills install <name> # Install from ClawHub
 ```
 
-Browse community skills at [ClawHub](https://github.com/openclaw/clawhub).
+Or place custom skill directories in `./skills/` (each needs a `SKILL.md` file).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│                Docker Network               │
-│                 (claw-net)                   │
-│                                             │
-│  ┌──────────────┐    ┌──────────────────┐   │
-│  │   Ollama      │    │    OpenClaw       │   │
-│  │  (LLM engine) │◄───│  (AI assistant)  │   │
-│  │  :11434       │    │                  │   │
-│  │  6GB RAM max  │    │  4GB RAM max     │   │
-│  └──────────────┘    └──────────────────┘   │
-│         │                     │              │
-│    ollama-data          openclaw-config      │
-│    (models)            (config + workspace)  │
-└─────────────────────────────────────────────┘
+Direct mode:                    Docker mode:
+┌──────────────────────┐       ┌─────────────────────────────────┐
+│   Your Machine       │       │        Docker Network           │
+│                      │       │         (claw-net)              │
+│  ┌────────────────┐  │       │  ┌──────────┐  ┌────────────┐  │
+│  │ Ollama :11434  │  │       │  │  Ollama   │  │  OpenClaw   │  │
+│  │ (LLM engine)   │  │       │  │  :11434   │←─│  :18789    │  │
+│  └───────┬────────┘  │       │  │  6GB max  │  │  2GB max   │  │
+│          │           │       │  └──────────┘  └────────────┘  │
+│  ┌───────┴────────┐  │       └─────────────────────────────────┘
+│  │ OpenClaw :18789│  │
+│  │ (AI assistant) │  │
+│  └────────────────┘  │
+└──────────────────────┘
+```
+
+## Configuration
+
+OpenClaw config lives at `~/.openclaw/openclaw.json`. Edit via CLI:
+
+```bash
+openclaw config get agents.defaults.model.primary
+openclaw config set agents.defaults.model.primary "ollama/phi3:mini"
+openclaw doctor       # Diagnostics
+openclaw doctor --fix # Auto-fix issues
 ```
 
 ## Troubleshooting
 
-**Ollama is slow or OOM:**
-Switch to a smaller model: `python3 scripts/manage.py models pull deepseek-coder:1.3b`
+**Models show as "missing":** Run `ollama pull qwen2.5-coder:3b` to download.
 
-**Container won't start:**
-Check logs: `docker compose logs ollama` or `docker compose logs openclaw`
+**Ollama is slow / OOM:** Switch to a smaller model: `ollama pull deepseek-coder:1.3b`
 
-**Model download stuck:**
-Restart Ollama: `docker compose restart ollama`, then re-pull the model.
+**Gateway won't start:** Run `OLLAMA_API_KEY=ollama-local openclaw doctor` for diagnostics.
 
-**Telegram bot not responding:**
-Verify your bot token and user ID in `.env`, then restart.
+**Telegram bot not responding:** Verify token and user ID, then restart gateway.
