@@ -10,7 +10,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DEFAULT_MODEL="qwen2.5-coder:3b"
+DEFAULT_MODEL="qwen3.5:4b"
 
 # ── Colors ───────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -76,11 +76,11 @@ fi
 
 # Ask for model
 echo ""
-info "Recommended models for 8GB RAM:"
-echo "  1) qwen2.5-coder:3b   — Best for coding (~2.5GB) [default]"
-echo "  2) phi3:mini           — General purpose (~2.3GB)"
-echo "  3) deepseek-coder:1.3b — Ultra-light coding (~1GB)"
-echo "  4) llama3.2:3b         — General purpose (~2.0GB)"
+info "Recommended models (Qwen 3.5 — latest, with tool calling):"
+echo "  1) qwen3.5:4b          — Best balance for 8GB RAM (~4GB) [default]"
+echo "  2) qwen3.5:2b          — Lighter, still great (~3GB)"
+echo "  3) qwen3.5:0.8b        — Ultra-light, runs on phones (~2GB)"
+echo "  4) qwen3.5:9b          — Best quality if you have 16GB+ RAM (~8GB)"
 echo ""
 read -p "Model to pull [$DEFAULT_MODEL]: " MODEL_CHOICE
 MODEL="${MODEL_CHOICE:-$DEFAULT_MODEL}"

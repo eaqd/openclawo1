@@ -20,8 +20,8 @@
     defaults: {
       workspace: "~/.openclaw/workspace",
       model: {
-        primary: "ollama/qwen2.5-coder:3b",
-        fallbacks: ["ollama/phi3:mini"],
+        primary: "ollama/qwen3.5:4b",
+        fallbacks: ["ollama/qwen3.5:2b", "ollama/qwen3.5:0.8b"],
       },
       memorySearch: {
         enabled: false,  // requires an embedding provider; enable if you add one

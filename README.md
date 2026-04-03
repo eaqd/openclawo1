@@ -72,28 +72,30 @@ The management CLI auto-detects whether you're running Docker or direct mode.
 
 ## Ollama Models
 
-Default: `qwen2.5-coder:3b` — best coding model for 8GB RAM.
+Default: `qwen3.5:4b` — latest Qwen 3.5 with native tool calling, runs on 8GB RAM.
 
 ```bash
 # List installed models
 python3 scripts/manage.py models list
 
 # Pull a different model
-python3 scripts/manage.py models pull phi3:mini
-python3 scripts/manage.py models pull llama3.2:3b
+python3 scripts/manage.py models pull qwen3.5:2b
+python3 scripts/manage.py models pull qwen3.5:9b
 
 # Remove a model
-python3 scripts/manage.py models remove phi3:mini
+python3 scripts/manage.py models remove qwen3.5:2b
 ```
 
-### Recommended Models (8GB RAM)
+### Recommended Models (Qwen 3.5 — March 2026)
 
-| Model | Size | Best For |
-|-------|------|----------|
-| `qwen2.5-coder:3b` | ~2.5GB | Coding tasks (default) |
-| `phi3:mini` | ~2.3GB | General purpose |
-| `llama3.2:3b` | ~2.0GB | General purpose |
-| `deepseek-coder:1.3b` | ~1GB | Lightweight coding |
+| Model | RAM | Best For |
+|-------|-----|----------|
+| `qwen3.5:4b` | ~4GB | Best balance for 8GB systems (default) |
+| `qwen3.5:2b` | ~3GB | Lighter, phones + low-end devices |
+| `qwen3.5:0.8b` | ~2GB | Ultra-light, runs on phones |
+| `qwen3.5:9b` | ~8GB | Best quality (16GB+ RAM) |
+
+All Qwen 3.5 models support **native tool calling** (required for OpenClaw skills).
 
 ## Telegram Bot Setup
 
