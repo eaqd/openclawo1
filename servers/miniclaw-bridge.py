@@ -13,22 +13,61 @@ Implements:
   - POST /v1/chat/completions  (OpenAI-compatible)
   - GET  /api/tags       (Ollama model listing)
   - GET  /v1/models      (OpenAI model listing)
+  - GET  /health         (Health check endpoint)
 
 Usage:
     python3 servers/miniclaw-bridge.py
-    # Runs on port 11434 (same as Ollama)
+    # Runs on port 11434 (loopback only)
 """
 
 import json
 import re
 import time
 import uuid
-from flask import Flask, request, Response, jsonify
+import os
+from collections import defaultdict
+from flask import Flask, request, Response, jsonify, abort
 
 app = Flask(__name__)
 
+# ── Configuration ───────────────────────────────────────────
 MODEL_NAME = "miniclaw:latest"
 MODEL_ID = "miniclaw"
+MAX_REQUEST_SIZE = 1 * 1024 * 1024  # 1MB max request body
+ALLOWED_ORIGINS = os.environ.get(
+    "MINICLAW_CORS_ORIGINS", "http://localhost:18789,http://127.0.0.1:18789"
+).split(",")
+
+# ── Rate Limiting ───────────────────────────────────────────
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = 60     # requests per window
+_rate_store = defaultdict(list)
+
+
+def check_rate_limit():
+    """Simple per-IP rate limiter."""
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+    # Clean old entries
+    _rate_store[ip] = [t for t in _rate_store[ip] if t > window_start]
+    if len(_rate_store[ip]) >= RATE_LIMIT_MAX:
+        abort(429, description="Rate limit exceeded. Try again later.")
+    _rate_store[ip].append(now)
+
+
+# ── Request Validation ──────────────────────────────────────
+def get_validated_json():
+    """Parse and validate JSON request body with size check."""
+    if request.content_length and request.content_length > MAX_REQUEST_SIZE:
+        abort(413, description="Request body too large.")
+    if not request.is_json:
+        abort(415, description="Content-Type must be application/json.")
+    data = request.get_json(silent=True)
+    if data is None:
+        abort(400, description="Invalid JSON body.")
+    return data
+
 
 # ── Response Templates ───────────────────────────────────────
 
@@ -58,7 +97,6 @@ CODE_TEMPLATES = {
     "fizzbuzz": 'for i in range(1, 101):\n    if i % 15 == 0:\n        print("FizzBuzz")\n    elif i % 3 == 0:\n        print("Fizz")\n    elif i % 5 == 0:\n        print("Buzz")\n    else:\n        print(i)',
 }
 
-# Tool calling support
 TOOL_RESPONSE_TEMPLATE = {
     "name": "",
     "arguments": "{}",
@@ -94,7 +132,6 @@ def generate_response(messages):
 
     last_msg = messages[-1].get("content", "")
     if isinstance(last_msg, list):
-        # Handle multi-part messages
         last_msg = " ".join(
             p.get("text", "") for p in last_msg if p.get("type") == "text"
         )
@@ -110,8 +147,7 @@ def generate_response(messages):
         code = find_code_template(last_msg)
         return RESPONSES["code"][0].format(code=code)
     else:
-        # Generate a contextual response
-        context = f"You asked about: \"{last_msg[:100]}\"\n\nThis is a lightweight bridge model (MiniClaw) running locally for demo purposes. For full AI capabilities, pull a real model:\n\n```bash\nollama pull qwen2.5-coder:3b\n```\n\nThen restart OpenClaw and I'll use the full model for much better responses."
+        context = f"You asked about: \"{last_msg[:100]}\"\n\nThis is a lightweight bridge model (MiniClaw) running locally for demo purposes. For full AI capabilities, pull a real model:\n\n```bash\nollama pull qwen3.5:4b\n```\n\nThen restart OpenClaw and I'll use the full model for much better responses."
         return RESPONSES["unknown"][0].format(context=context)
 
 
@@ -119,11 +155,6 @@ def handle_tool_calls(messages, tools):
     """Handle tool calling requests."""
     if not tools:
         return None, generate_response(messages)
-
-    last_msg = messages[-1].get("content", "") if messages else ""
-
-    # For tool calls, return a simple tool call response
-    # This ensures OpenClaw's skill system can at least activate
     return None, generate_response(messages)
 
 
@@ -133,6 +164,7 @@ def handle_tool_calls(messages, tools):
 @app.route("/api/tags", methods=["GET"])
 def ollama_tags():
     """List available models (Ollama format)."""
+    check_rate_limit()
     return jsonify({
         "models": [{
             "name": MODEL_NAME,
@@ -155,7 +187,8 @@ def ollama_tags():
 @app.route("/api/chat", methods=["POST"])
 def ollama_chat():
     """Ollama native chat endpoint."""
-    data = request.get_json(force=True)
+    check_rate_limit()
+    data = get_validated_json()
     messages = data.get("messages", [])
     stream = data.get("stream", True)
     tools = data.get("tools", [])
@@ -164,7 +197,6 @@ def ollama_chat():
 
     if stream:
         def generate():
-            # Stream word by word
             words = response_text.split(" ")
             for i, word in enumerate(words):
                 chunk = word + (" " if i < len(words) - 1 else "")
@@ -174,9 +206,8 @@ def ollama_chat():
                     "message": {"role": "assistant", "content": chunk},
                     "done": False,
                 }) + "\n"
-                time.sleep(0.02)  # Simulate typing
+                time.sleep(0.02)
 
-            # Final message
             yield json.dumps({
                 "model": MODEL_NAME,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -184,7 +215,7 @@ def ollama_chat():
                 "done": True,
                 "total_duration": 100000000,
                 "load_duration": 10000000,
-                "prompt_eval_count": sum(len(m.get("content", "")) for m in messages),
+                "prompt_eval_count": sum(len(str(m.get("content", ""))) for m in messages),
                 "eval_count": len(response_text),
             }) + "\n"
 
@@ -203,7 +234,8 @@ def ollama_chat():
 @app.route("/api/generate", methods=["POST"])
 def ollama_generate():
     """Ollama generate endpoint."""
-    data = request.get_json(force=True)
+    check_rate_limit()
+    data = get_validated_json()
     prompt = data.get("prompt", "")
     stream = data.get("stream", True)
 
@@ -241,6 +273,7 @@ def ollama_generate():
 @app.route("/api/show", methods=["POST"])
 def ollama_show():
     """Show model info."""
+    check_rate_limit()
     return jsonify({
         "modelfile": "FROM miniclaw-bridge",
         "parameters": "temperature 0.7",
@@ -268,6 +301,7 @@ def ollama_show():
 @app.route("/v1/models", methods=["GET"])
 def openai_models():
     """List models (OpenAI format)."""
+    check_rate_limit()
     return jsonify({
         "object": "list",
         "data": [{
@@ -282,7 +316,8 @@ def openai_models():
 @app.route("/v1/chat/completions", methods=["POST"])
 def openai_chat():
     """OpenAI-compatible chat completions."""
-    data = request.get_json(force=True)
+    check_rate_limit()
+    data = get_validated_json()
     messages = data.get("messages", [])
     stream = data.get("stream", False)
     tools = data.get("tools", [])
@@ -293,7 +328,6 @@ def openai_chat():
 
     if stream:
         def generate():
-            # SSE format
             words = response_text.split(" ")
             for i, word in enumerate(words):
                 chunk = word + (" " if i < len(words) - 1 else "")
@@ -309,7 +343,6 @@ def openai_chat():
                     }],
                 }
                 yield f"data: {json.dumps(data)}\n\n"
-            # Final
             data = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
@@ -337,25 +370,30 @@ def openai_chat():
                 "finish_reason": "stop",
             }],
             "usage": {
-                "prompt_tokens": sum(len(m.get("content", "")) for m in messages) // 4,
+                "prompt_tokens": sum(len(str(m.get("content", ""))) for m in messages) // 4,
                 "completion_tokens": len(response_text) // 4,
-                "total_tokens": (sum(len(m.get("content", "")) for m in messages) + len(response_text)) // 4,
+                "total_tokens": (sum(len(str(m.get("content", ""))) for m in messages) + len(response_text)) // 4,
             },
         })
 
 
-# ── Health ───────────────────────────────────────────────────
+# ── Health & Info ───────────────────────────────────────────
 
 
 @app.route("/", methods=["GET"])
-def health():
+def root():
     return "MiniClaw Bridge Server - Ollama-compatible LLM API"
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint for monitoring and Docker."""
+    return jsonify({"status": "ok", "model": MODEL_NAME, "uptime": int(time.time() - _start_time)})
 
 
 @app.route("/ui", methods=["GET"])
 def serve_ui():
     """Serve the web chat UI."""
-    import os
     ui_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "web", "index.html"
@@ -368,10 +406,13 @@ def serve_ui():
 
 @app.after_request
 def add_cors(response):
-    """Allow cross-origin requests for the API."""
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    """Allow cross-origin requests only from trusted origins."""
+    origin = request.headers.get("Origin", "")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Vary"] = "Origin"
     return response
 
 
@@ -380,13 +421,20 @@ def version():
     return jsonify({"version": "0.20.0"})
 
 
+_start_time = time.time()
+
 if __name__ == "__main__":
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║  MiniClaw Bridge Server                             ║")
-    print("║  Ollama-compatible API on http://localhost:11434     ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    host = os.environ.get("MINICLAW_HOST", "127.0.0.1")
+    port = int(os.environ.get("MINICLAW_PORT", "11434"))
+
+    print("+" + "=" * 54 + "+")
+    print("|  MiniClaw Bridge Server                              |")
+    print(f"|  Ollama-compatible API on http://{host}:{port:<5}       |")
+    print("+" + "=" * 54 + "+")
     print()
-    print("  This is a lightweight bridge for sandboxed environments.")
-    print("  For full AI: ollama pull qwen2.5-coder:3b")
+    print(f"  Binding to {host} (loopback only)" if host == "127.0.0.1" else f"  WARNING: Binding to {host} (network-exposed)")
+    print("  Rate limit: %d req/%ds per IP" % (RATE_LIMIT_MAX, RATE_LIMIT_WINDOW))
+    print("  CORS origins:", ", ".join(ALLOWED_ORIGINS))
+    print("  For full AI: ollama pull qwen3.5:4b")
     print()
-    app.run(host="0.0.0.0", port=11434, debug=False)
+    app.run(host=host, port=port, debug=False)

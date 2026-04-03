@@ -10,6 +10,8 @@ Usage:
 """
 
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,17 +22,29 @@ ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
 ENV_EXAMPLE = os.path.join(SCRIPT_DIR, ".env.example")
 CONFIG_SRC = os.path.join(SCRIPT_DIR, "config", "openclaw.json5")
 
-DEFAULT_MODEL = "qwen2.5-coder:3b"
+DEFAULT_MODEL = "qwen3.5:4b"
+
+MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9._:/-]+$")
+
+
+def validate_model_name(name):
+    """Validate model name to prevent injection."""
+    if not name or len(name) > 128 or not MODEL_NAME_RE.match(name):
+        print(f"ERROR: Invalid model name '{name}'.")
+        sys.exit(1)
+    return name
 
 
 def run(cmd, check=True, capture=False, **kwargs):
-    """Run a shell command."""
+    """Run a command safely."""
     kwargs.setdefault("cwd", SCRIPT_DIR)
     if capture:
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
         kwargs["text"] = True
-    return subprocess.run(cmd, shell=True, check=check, **kwargs)
+    if isinstance(cmd, str):
+        cmd = shlex.split(cmd)
+    return subprocess.run(cmd, check=check, **kwargs)
 
 
 def check_prerequisites():
@@ -42,17 +56,15 @@ def check_prerequisites():
         print("Install it from: https://docs.docker.com/get-docker/")
         sys.exit(1)
 
-    # Check Docker Compose (v2 plugin or standalone)
-    result = run("docker compose version", check=False, capture=True)
+    result = run(["docker", "compose", "version"], check=False, capture=True)
     if result.returncode != 0:
-        result = run("docker-compose version", check=False, capture=True)
+        result = run(["docker-compose", "version"], check=False, capture=True)
         if result.returncode != 0:
             print("ERROR: Docker Compose is not installed.")
             print("Install it from: https://docs.docker.com/compose/install/")
             sys.exit(1)
 
-    # Check Docker daemon is running
-    result = run("docker info", check=False, capture=True)
+    result = run(["docker", "info"], check=False, capture=True)
     if result.returncode != 0:
         print("ERROR: Docker daemon is not running.")
         print("Start Docker and try again.")
@@ -70,12 +82,12 @@ def check_disk_space():
     free_gb = (statvfs.f_bavail * statvfs.f_frsize) / (1024 ** 3)
     print(f"  Available: {free_gb:.1f} GB")
     if free_gb < 5:
-        print("  WARNING: Less than 5GB free. The default model needs ~2.5GB.")
+        print("  WARNING: Less than 5GB free. The default model needs ~4GB.")
         response = input("  Continue anyway? [y/N]: ").strip().lower()
         if response != "y":
             sys.exit(0)
     else:
-        print("  OK (model needs ~2.5GB)")
+        print("  OK (model needs ~4GB)")
 
 
 def configure_env():
@@ -87,27 +99,36 @@ def configure_env():
             print("Keeping existing .env file.")
             return
 
-    print("\n── Configuration ──────────────────────────────────────")
+    print("\n-- Configuration ------------------------------------------")
 
-    # Ollama model
-    print(f"\nRecommended models for 8GB RAM:")
-    print(f"  qwen2.5-coder:3b    Best for coding (~2.5GB)")
-    print(f"  phi3:mini           General purpose (~2.3GB)")
-    print(f"  deepseek-coder:1.3b Ultra-light coding (~1GB)")
+    print(f"\nRecommended models (Qwen 3.5 with tool calling):")
+    print(f"  qwen3.5:4b          Best balance for 8GB (~4GB)")
+    print(f"  qwen3.5:2b          Lighter (~3GB)")
+    print(f"  qwen3.5:0.8b        Ultra-light (~2GB)")
+    print(f"  qwen3.5:9b          Best quality, 16GB+ (~8GB)")
     model = input(f"\nOllama model [{DEFAULT_MODEL}]: ").strip()
     if not model:
         model = DEFAULT_MODEL
+    model = validate_model_name(model)
 
     # Telegram
     print("\nTelegram bot setup (optional, press Enter to skip):")
     print("  Get a bot token from @BotFather: https://t.me/BotFather")
-    telegram_token = input("  Bot token: ").strip()
+    import getpass
+    telegram_token = getpass.getpass("  Bot token (hidden): ").strip()
     telegram_users = ""
     if telegram_token:
         print("  Get your user ID from @userinfobot: https://t.me/userinfobot")
         telegram_users = input("  Allowed user IDs (comma-separated): ").strip()
+        # Validate user IDs are numeric
+        if telegram_users:
+            for uid in telegram_users.split(","):
+                uid = uid.strip()
+                if uid and not uid.isdigit():
+                    print(f"  WARNING: '{uid}' is not a valid numeric user ID. Skipping.")
+                    telegram_users = ""
+                    break
 
-    # Log level
     log_level = input(f"\nLog level [info]: ").strip() or "info"
 
     # Write .env
@@ -121,23 +142,26 @@ def configure_env():
         f.write(f"OLLAMA_HOST_PORT=11434\n")
         f.write(f"TZ=UTC\n")
 
+    # Restrict .env permissions (contains secrets)
+    os.chmod(ENV_FILE, 0o600)
+
     print(f"\nConfiguration saved to {ENV_FILE}")
 
 
 def build_and_start():
     """Pull images and start containers."""
-    print("\n── Pulling Images & Starting Services ────────────────")
+    print("\n-- Pulling Images & Starting Services ---------------------")
 
     print("Pulling Docker images (this may take a few minutes)...")
-    run("docker compose pull ollama")
+    run(["docker", "compose", "pull", "ollama"])
 
     print("Starting Ollama...")
-    run("docker compose up -d ollama")
+    run(["docker", "compose", "up", "-d", "ollama"])
 
     print("Waiting for Ollama to be healthy...")
     for i in range(30):
         result = run(
-            "docker compose exec -T ollama curl -sf http://localhost:11434/api/tags",
+            ["docker", "compose", "exec", "-T", "ollama", "curl", "-sf", "http://localhost:11434/api/tags"],
             check=False, capture=True
         )
         if result.returncode == 0:
@@ -157,46 +181,43 @@ def pull_model():
                 if line.startswith("OLLAMA_MODEL="):
                     model = line.strip().split("=", 1)[1]
                     break
+    model = validate_model_name(model)
 
-    print(f"\n── Pulling Model: {model} ─────────────────────────────")
+    print(f"\n-- Pulling Model: {model} -----------------------------------")
     print("This may take a few minutes on first run...")
-    run(f"docker compose exec -T ollama ollama pull {model}")
+    run(["docker", "compose", "exec", "-T", "ollama", "ollama", "pull", model])
     print(f"  Model '{model}' is ready!")
 
 
 def copy_config():
     """Copy OpenClaw config into the data volume."""
-    print("\n── Configuring OpenClaw ───────────────────────────────")
-    # Start OpenClaw briefly to create the volume, then copy config in
-    run("docker compose up -d openclaw")
+    print("\n-- Configuring OpenClaw ------------------------------------")
+    run(["docker", "compose", "up", "-d", "openclaw"])
     time.sleep(3)
 
-    # Copy config files into the container's config directory
-    run(f"docker compose cp config/openclaw.json5 openclaw:/home/node/.openclaw/openclaw.json5")
-    run(f"docker compose cp config/telegram.json5 openclaw:/home/node/.openclaw/telegram.json5")
+    run(["docker", "compose", "cp", "config/openclaw.json5", "openclaw:/home/node/.openclaw/openclaw.json5"])
+    run(["docker", "compose", "cp", "config/telegram.json5", "openclaw:/home/node/.openclaw/telegram.json5"])
 
-    # Restart OpenClaw to pick up the config
-    run("docker compose restart openclaw")
+    run(["docker", "compose", "restart", "openclaw"])
     print("  Configuration applied!")
 
 
 def start_all():
     """Start remaining services."""
-    print("\n── Starting All Services ─────────────────────────────")
-    run("docker compose up -d")
+    print("\n-- Starting All Services ----------------------------------")
+    run(["docker", "compose", "up", "-d"])
     print("  All services started!")
 
 
 def verify():
     """Verify all services are running."""
-    print("\n── Verification ──────────────────────────────────────")
+    print("\n-- Verification -------------------------------------------")
 
-    result = run("docker compose ps", check=False, capture=True)
+    result = run(["docker", "compose", "ps"], check=False, capture=True)
     if result.returncode == 0:
         print(result.stdout)
 
-    # Check Ollama models
-    result = run("docker compose exec -T ollama ollama list",
+    result = run(["docker", "compose", "exec", "-T", "ollama", "ollama", "list"],
                  check=False, capture=True)
     if result.returncode == 0:
         print("Installed models:")
@@ -206,9 +227,9 @@ def verify():
 def print_instructions():
     """Print usage instructions."""
     print("""
-══════════════════════════════════════════════════════════
+==========================================================
   OpenClaw is ready!
-══════════════════════════════════════════════════════════
+==========================================================
 
   Usage:
     Interactive mode:   docker compose exec openclaw openclaw
@@ -231,15 +252,15 @@ def print_instructions():
   Telegram:
     If configured, message your bot on Telegram to interact.
 
-══════════════════════════════════════════════════════════
+==========================================================
 """)
 
 
 def main():
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║        OpenClaw Sandbox Setup                       ║")
-    print("║        Free AI Assistant with Ollama                ║")
-    print("╚══════════════════════════════════════════════════════╝\n")
+    print("+======================================================+")
+    print("|        OpenClaw Sandbox Setup                         |")
+    print("|        Free AI Assistant with Ollama                  |")
+    print("+======================================================+\n")
 
     check_prerequisites()
     check_disk_space()

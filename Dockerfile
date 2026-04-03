@@ -14,24 +14,18 @@ LABEL description="OpenClaw AI Assistant with Ollama integration"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install only required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
-    python3-pip \
-    git \
     curl \
-    build-essential \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 # Install OpenClaw globally
-RUN npm install -g openclaw
+RUN npm install -g openclaw && npm cache clean --force
 
 # Create non-root user
-RUN groupadd -r openclaw && useradd -r -g openclaw -m -d /home/node openclaw
+RUN groupadd -r openclaw && useradd -r -g openclaw -m -d /home/node -s /bin/false openclaw
 
 # Create directories
 RUN mkdir -p /home/node/.openclaw/skills \

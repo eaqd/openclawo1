@@ -1,5 +1,6 @@
-# Environment
+# Environment & Secrets
 .env
+.gateway-token
 
 # Docker volumes
 ollama-data/

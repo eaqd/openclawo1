@@ -7,7 +7,7 @@ services:
     container_name: openclaw-ollama
     restart: unless-stopped
     ports:
-      - "${OLLAMA_HOST_PORT:-11434}:11434"
+      - "127.0.0.1:${OLLAMA_HOST_PORT:-11434}:11434"
     volumes:
       - ollama-data:/root/.ollama
     networks:
@@ -15,7 +15,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6g
+          memory: ${OLLAMA_MEM_LIMIT:-6g}
       # Uncomment for NVIDIA GPU support:
       # resources:
       #   reservations:
@@ -57,6 +57,10 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
     environment:
       - HOME=/home/node
       - TERM=xterm-256color
@@ -76,14 +80,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2g
+          memory: ${OPENCLAW_MEM_LIMIT:-2g}
     security_opt:
       - no-new-privileges:true
     cap_drop:
-      - NET_RAW
-      - NET_ADMIN
-    stdin_open: true
-    tty: true
+      - ALL
 
 volumes:
   ollama-data:

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src *;">
 <title>OpenClaw — AI Assistant</title>
 <style>
   :root {
@@ -158,53 +159,53 @@
 <body>
 
 <div class="header">
-  <span class="logo">🦞</span>
+  <span class="logo">&#x1F99E;</span>
   <h1>OpenClaw</h1>
   <div class="status">
     <span class="dot" id="statusDot"></span>
     <span id="statusText">Connecting...</span>
-    <span style="margin-left:12px;cursor:pointer" onclick="openConfig()">⚙️</span>
+    <span style="margin-left:12px;cursor:pointer" onclick="openConfig()">&#x2699;&#xFE0F;</span>
   </div>
 </div>
 
 <div class="main">
   <div class="sidebar">
     <h3>Sessions</h3>
-    <div class="item active">💬 Main Chat</div>
-    <div class="item">📝 New Session</div>
+    <div class="item active">&#x1F4AC; Main Chat</div>
+    <div class="item">&#x1F4DD; New Session</div>
 
     <h3 style="margin-top:20px">Skills (9 ready)</h3>
-    <div class="item">🔧 Code Generation</div>
-    <div class="item">📊 Data Analysis</div>
-    <div class="item">🔍 Web Search</div>
-    <div class="item">📅 Calendar</div>
-    <div class="item">📝 Notes</div>
+    <div class="item">&#x1F527; Code Generation</div>
+    <div class="item">&#x1F4CA; Data Analysis</div>
+    <div class="item">&#x1F50D; Web Search</div>
+    <div class="item">&#x1F4C5; Calendar</div>
+    <div class="item">&#x1F4DD; Notes</div>
 
     <div class="info-box">
       <strong>Model</strong>
-      miniclaw:latest (bridge)<br>
+      <span id="sidebarModel">miniclaw:latest (bridge)</span><br>
       <span style="font-size:11px">For full AI: pull a real model</span>
     </div>
 
     <div class="info-box">
       <strong>Sandbox</strong>
-      PID isolation ✓<br>
-      Memory: 6GB limit ✓<br>
-      CPU: 50% limit ✓<br>
-      Read-only rootfs ✓
+      PID isolation &#x2713;<br>
+      Memory: 6GB limit &#x2713;<br>
+      CPU: 50% limit &#x2713;<br>
+      Read-only rootfs &#x2713;
     </div>
   </div>
 
   <div class="chat-area">
     <div class="messages" id="messages">
       <div class="welcome" id="welcome">
-        <div class="big">🦞</div>
+        <div class="big">&#x1F99E;</div>
         <h2>Welcome to OpenClaw</h2>
         <p>Your personal AI assistant running locally with Ollama. Free, private, and sandboxed.</p>
         <div class="chips">
-          <div class="chip" onclick="sendQuick('Hello! What can you help me with?')">👋 Say hello</div>
-          <div class="chip" onclick="sendQuick('Write me a fibonacci function in Python')">💻 Write code</div>
-          <div class="chip" onclick="sendQuick('Help me understand recursion')">📚 Explain concept</div>
+          <div class="chip" onclick="sendQuick('Hello! What can you help me with?')">&#x1F44B; Say hello</div>
+          <div class="chip" onclick="sendQuick('Write me a fibonacci function in Python')">&#x1F4BB; Write code</div>
+          <div class="chip" onclick="sendQuick('Help me understand recursion')">&#x1F4DA; Explain concept</div>
         </div>
       </div>
     </div>
@@ -215,7 +216,7 @@
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
         <button onclick="send()" id="sendBtn">Send</button>
       </div>
-      <div class="hint">Enter to send · Shift+Enter for new line · Powered by MiniClaw Bridge</div>
+      <div class="hint">Enter to send · Shift+Enter for new line · Powered by Ollama</div>
     </div>
   </div>
 </div>
@@ -223,13 +224,13 @@
 <!-- Config Modal -->
 <div class="modal-overlay" id="configModal">
   <div class="modal">
-    <h2>⚙️ Server Configuration</h2>
+    <h2>&#x2699;&#xFE0F; Server Configuration</h2>
     <label>Ollama API URL</label>
     <input id="cfgOllama" value="http://localhost:11434" placeholder="http://localhost:11434">
     <label>Gateway Token</label>
-    <input id="cfgToken" value="openclaw-sandbox-2026" placeholder="your-token">
+    <input id="cfgToken" type="password" placeholder="Enter token (set via OPENCLAW_GATEWAY_TOKEN)">
     <label>Model</label>
-    <input id="cfgModel" value="miniclaw" placeholder="miniclaw or qwen2.5-coder:3b">
+    <input id="cfgModel" value="miniclaw" placeholder="miniclaw or qwen3.5:4b">
     <div class="btn-row">
       <button onclick="closeConfig()">Cancel</button>
       <button class="primary" onclick="saveConfig()">Save & Connect</button>
@@ -238,24 +239,48 @@
 </div>
 
 <script>
+  // ── Safe HTML rendering ──
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  function renderMarkdown(text) {
+    // Escape all HTML first to prevent XSS
+    var safe = escapeHtml(text);
+    // Then apply safe markdown transformations on escaped text
+    // Code blocks: ```lang\ncode```
+    safe = safe.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+      return '<pre><code>' + code + '</code></pre>';
+    });
+    // Inline code: `code`
+    safe = safe.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bold: **text**
+    safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Italic: *text*
+    safe = safe.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return safe;
+  }
+
   // ── Config ──
-  let CONFIG = {
+  var CONFIG = {
     ollamaUrl: localStorage.getItem('oc_url') || 'http://localhost:11434',
-    token: localStorage.getItem('oc_token') || 'openclaw-sandbox-2026',
+    token: localStorage.getItem('oc_token') || '',
     model: localStorage.getItem('oc_model') || 'miniclaw',
   };
 
-  const $messages = document.getElementById('messages');
-  const $input = document.getElementById('input');
-  const $sendBtn = document.getElementById('sendBtn');
-  const $statusDot = document.getElementById('statusDot');
-  const $statusText = document.getElementById('statusText');
-  const $welcome = document.getElementById('welcome');
+  var $messages = document.getElementById('messages');
+  var $input = document.getElementById('input');
+  var $sendBtn = document.getElementById('sendBtn');
+  var $statusDot = document.getElementById('statusDot');
+  var $statusText = document.getElementById('statusText');
+  var $welcome = document.getElementById('welcome');
 
   // ── Status check ──
   async function checkStatus() {
     try {
-      const res = await fetch(CONFIG.ollamaUrl + '/api/tags');
+      var res = await fetch(CONFIG.ollamaUrl + '/api/tags');
       if (res.ok) {
         $statusDot.className = 'dot';
         $statusText.textContent = 'Connected';
@@ -263,28 +288,46 @@
       }
     } catch(e) {}
     $statusDot.className = 'dot off';
-    $statusText.textContent = 'Disconnected — click ⚙️ to configure';
+    $statusText.textContent = 'Disconnected — click gear to configure';
     return false;
   }
 
   // ── Chat ──
   function addMessage(role, text) {
     if ($welcome) $welcome.style.display = 'none';
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     div.className = 'message ' + role;
-    const avatar = role === 'bot' ? '🦞' : '👤';
-    // Parse markdown code blocks
-    let html = text
-      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-    div.innerHTML = `<div class="avatar">${avatar}</div><div class="bubble">${html}</div>`;
+
+    var avatarEl = document.createElement('div');
+    avatarEl.className = 'avatar';
+    avatarEl.textContent = role === 'bot' ? '\u{1F99E}' : '\u{1F464}';
+
+    var bubbleEl = document.createElement('div');
+    bubbleEl.className = 'bubble';
+
+    if (role === 'user') {
+      // User messages: always plain text, never parsed
+      bubbleEl.textContent = text;
+    } else {
+      // Bot messages: safe markdown rendering (HTML-escaped first)
+      bubbleEl.innerHTML = renderMarkdown(text);
+    }
+
+    if (role === 'user') {
+      div.appendChild(bubbleEl);
+      div.appendChild(avatarEl);
+    } else {
+      div.appendChild(avatarEl);
+      div.appendChild(bubbleEl);
+    }
+
     $messages.appendChild(div);
     $messages.scrollTop = $messages.scrollHeight;
     return div;
   }
 
   async function send() {
-    const text = $input.value.trim();
+    var text = $input.value.trim();
     if (!text) return;
     $input.value = '';
     $input.style.height = 'auto';
@@ -293,12 +336,12 @@
     $sendBtn.disabled = true;
     $sendBtn.textContent = '...';
 
-    const botDiv = addMessage('bot', '');
-    const bubble = botDiv.querySelector('.bubble');
+    var botDiv = addMessage('bot', '');
+    var bubble = botDiv.querySelector('.bubble');
     bubble.textContent = 'Thinking...';
 
     try {
-      const res = await fetch(CONFIG.ollamaUrl + '/api/chat', {
+      var res = await fetch(CONFIG.ollamaUrl + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -308,33 +351,32 @@
         }),
       });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let fullText = '';
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var fullText = '';
       bubble.textContent = '';
 
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
+        var result = await reader.read();
+        if (result.done) break;
+        var chunk = decoder.decode(result.value, { stream: true });
+        var lines = chunk.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
           if (!line.trim()) continue;
           try {
-            const data = JSON.parse(line);
+            var data = JSON.parse(line);
             if (data.message && data.message.content) {
               fullText += data.message.content;
-              // Re-render with markdown
-              let html = fullText
-                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>');
-              bubble.innerHTML = html;
+              // Re-render with safe markdown (escapes HTML first)
+              bubble.innerHTML = renderMarkdown(fullText);
               $messages.scrollTop = $messages.scrollHeight;
             }
           } catch(e) {}
         }
       }
     } catch(e) {
-      bubble.textContent = 'Error: Could not connect to ' + CONFIG.ollamaUrl + '. Click ⚙️ to configure.';
+      bubble.textContent = 'Error: Could not connect to ' + CONFIG.ollamaUrl + '. Click gear to configure.';
       bubble.style.color = '#f85149';
     }
 

@@ -18,6 +18,8 @@ Commands:
 """
 
 import os
+import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -28,14 +30,28 @@ import json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
-# Auto-detect mode: Docker if docker-compose services are running, else direct
+# Valid model name: alphanumeric, dots, colons, hyphens, underscores, slashes
+MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9._:/-]+$")
+
+
+def validate_model_name(name):
+    """Validate model name to prevent injection."""
+    if not name or len(name) > 128:
+        print(f"ERROR: Invalid model name (empty or too long).")
+        sys.exit(1)
+    if not MODEL_NAME_RE.match(name):
+        print(f"ERROR: Invalid model name '{name}'. Only alphanumeric, dots, colons, hyphens, underscores, and slashes allowed.")
+        sys.exit(1)
+    return name
+
+
 def is_docker_mode():
     """Check if Docker daemon is available and compose file exists."""
     compose_file = os.path.join(PROJECT_DIR, "docker-compose.yml")
     if not os.path.exists(compose_file):
         return False
     result = subprocess.run(
-        "docker info", shell=True, capture_output=True, text=True, cwd=PROJECT_DIR
+        ["docker", "info"], capture_output=True, text=True, cwd=PROJECT_DIR
     )
     return result.returncode == 0
 
@@ -43,8 +59,22 @@ def is_docker_mode():
 USE_DOCKER = is_docker_mode()
 
 
-def run(cmd, check=True, capture=False, interactive=False):
-    """Run a shell command."""
+def run(cmd, check=True, capture=False):
+    """Run a command (list form, no shell)."""
+    env = os.environ.copy()
+    env.setdefault("OLLAMA_API_KEY", "ollama-local")
+    kwargs = {"cwd": PROJECT_DIR, "env": env}
+    if capture:
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+        kwargs["text"] = True
+    if isinstance(cmd, str):
+        cmd = shlex.split(cmd)
+    return subprocess.run(cmd, check=check, **kwargs)
+
+
+def run_shell(cmd, check=True, capture=False):
+    """Run a shell command (only for simple, trusted commands)."""
     env = os.environ.copy()
     env.setdefault("OLLAMA_API_KEY", "ollama-local")
     kwargs = {"cwd": PROJECT_DIR, "shell": True, "env": env}
@@ -52,8 +82,6 @@ def run(cmd, check=True, capture=False, interactive=False):
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
         kwargs["text"] = True
-    if interactive:
-        kwargs["stdin"] = sys.stdin
     return subprocess.run(cmd, check=check, **kwargs)
 
 
@@ -73,14 +101,15 @@ def cmd_start():
     """Start all services."""
     if USE_DOCKER:
         print("Starting Docker services...")
-        run("docker compose up -d")
+        run(["docker", "compose", "up", "-d"])
     else:
-        # Start Ollama
         if not ollama_running():
             print("Starting Ollama server...")
+            log_path = os.path.join(PROJECT_DIR, "logs", "ollama.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
             subprocess.Popen(
                 ["ollama", "serve"],
-                stdout=open("/tmp/ollama.log", "a"),
+                stdout=open(log_path, "a"),
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
@@ -93,13 +122,14 @@ def cmd_start():
         if ollama_running():
             print("  Ollama: running (http://localhost:11434)")
         else:
-            print("  Ollama: FAILED to start (check /tmp/ollama.log)")
+            print("  Ollama: FAILED to start (check logs/ollama.log)")
 
-        # Start OpenClaw gateway
         print("Starting OpenClaw gateway...")
+        gw_log_path = os.path.join(PROJECT_DIR, "logs", "gateway.log")
+        os.makedirs(os.path.dirname(gw_log_path), exist_ok=True)
         subprocess.Popen(
             ["openclaw", "gateway"],
-            stdout=open("/tmp/openclaw-gateway.log", "a"),
+            stdout=open(gw_log_path, "a"),
             stderr=subprocess.STDOUT,
             env={**os.environ, "OLLAMA_API_KEY": "ollama-local"},
             start_new_session=True,
@@ -112,12 +142,12 @@ def cmd_stop():
     """Stop all services."""
     if USE_DOCKER:
         print("Stopping Docker services...")
-        run("docker compose down")
+        run(["docker", "compose", "down"])
     else:
         print("Stopping OpenClaw gateway...")
-        run("pkill -f 'openclaw gateway' || true", check=False)
+        run(["pkill", "-f", "openclaw gateway"], check=False)
         print("Stopping Ollama...")
-        run("pkill -f 'ollama serve' || true", check=False)
+        run(["pkill", "-f", "ollama serve"], check=False)
     print("All services stopped.")
 
 
@@ -131,48 +161,52 @@ def cmd_restart():
 
 def cmd_status():
     """Show service status."""
-    print("── Service Status ─────────────────────────────────────")
+    print("-- Service Status -----------------------------------------")
 
     if USE_DOCKER:
-        run("docker compose ps", check=False)
+        run(["docker", "compose", "ps"], check=False)
     else:
-        # Ollama
         if ollama_running():
             print("  Ollama:   RUNNING  (http://localhost:11434)")
         else:
             print("  Ollama:   STOPPED")
 
-        # Gateway
-        result = run("pgrep -f 'openclaw gateway'", check=False, capture=True)
+        result = run(["pgrep", "-f", "openclaw gateway"], check=False, capture=True)
         if result.returncode == 0:
             print("  Gateway:  RUNNING  (http://localhost:18789)")
         else:
             print("  Gateway:  STOPPED")
 
-    print("\n── Ollama Models ──────────────────────────────────────")
+    print("\n-- Ollama Models ------------------------------------------")
     if USE_DOCKER:
-        run("docker compose exec -T ollama ollama list", check=False)
+        run(["docker", "compose", "exec", "-T", "ollama", "ollama", "list"], check=False)
     else:
-        run("ollama list", check=False)
+        run(["ollama", "list"], check=False)
 
-    print("\n── OpenClaw Models ────────────────────────────────────")
-    run("openclaw models list", check=False)
+    print("\n-- OpenClaw Models ----------------------------------------")
+    run(["openclaw", "models", "list"], check=False)
 
 
 def cmd_logs():
     """Tail logs."""
     if USE_DOCKER:
-        service = sys.argv[2] if len(sys.argv) > 2 else ""
+        cmd = ["docker", "compose", "logs", "-f", "--tail", "100"]
+        if len(sys.argv) > 2:
+            cmd.append(sys.argv[2])
         try:
-            run(f"docker compose logs -f --tail 100 {service}")
+            run(cmd)
         except KeyboardInterrupt:
             pass
     else:
         target = sys.argv[2] if len(sys.argv) > 2 else "openclaw"
-        log_file = "/tmp/openclaw-gateway.log" if target == "openclaw" else "/tmp/ollama.log"
+        log_dir = os.path.join(PROJECT_DIR, "logs")
+        log_file = os.path.join(log_dir, "gateway.log") if target == "openclaw" else os.path.join(log_dir, "ollama.log")
+        # Fallback to /tmp if logs dir doesn't exist yet
+        if not os.path.exists(log_file):
+            log_file = "/tmp/openclaw-gateway.log" if target == "openclaw" else "/tmp/ollama.log"
         print(f"Tailing {log_file} (Ctrl+C to stop)...")
         try:
-            run(f"tail -f -n 100 {log_file}")
+            run(["tail", "-f", "-n", "100", log_file])
         except KeyboardInterrupt:
             pass
 
@@ -181,13 +215,13 @@ def cmd_update():
     """Update OpenClaw."""
     if USE_DOCKER:
         print("Pulling latest images...")
-        run("docker compose pull")
-        run("docker compose up -d")
+        run(["docker", "compose", "pull"])
+        run(["docker", "compose", "up", "-d"])
     else:
         print("Updating OpenClaw...")
-        run("npm update -g openclaw")
-        print(f"Updated to: ", end="")
-        run("openclaw --version")
+        run(["npm", "update", "-g", "openclaw"])
+        print("Updated to: ", end="")
+        run(["openclaw", "--version"])
 
 
 def cmd_models():
@@ -196,35 +230,39 @@ def cmd_models():
         print("Usage: manage.py models <list|pull|remove> [model-name]")
         print("\nExamples:")
         print("  manage.py models list")
-        print("  manage.py models pull qwen2.5-coder:7b")
+        print("  manage.py models pull qwen3.5:4b")
         print("  manage.py models remove phi3:mini")
-        print("\nRecommended models for 8GB RAM:")
-        print("  qwen2.5-coder:3b    Best for coding (~2.5GB)")
-        print("  phi3:mini           General purpose (~2.3GB)")
-        print("  llama3.2:3b         General purpose (~2.0GB)")
-        print("  deepseek-coder:1.3b Ultra-light coding (~1GB)")
+        print("\nRecommended models (Qwen 3.5):")
+        print("  qwen3.5:4b          Best balance for 8GB (~4GB)")
+        print("  qwen3.5:2b          Lighter (~3GB)")
+        print("  qwen3.5:0.8b        Ultra-light (~2GB)")
+        print("  qwen3.5:9b          Best quality, 16GB+ (~8GB)")
         return
 
     subcmd = sys.argv[2]
-    ollama_cmd = "docker compose exec -T ollama ollama" if USE_DOCKER else "ollama"
+
+    if USE_DOCKER:
+        ollama_base = ["docker", "compose", "exec", "-T", "ollama", "ollama"]
+    else:
+        ollama_base = ["ollama"]
 
     if subcmd == "list":
-        run(f"{ollama_cmd} list", check=False)
+        run(ollama_base + ["list"], check=False)
     elif subcmd == "pull":
         if len(sys.argv) < 4:
             print("Usage: manage.py models pull <model-name>")
             return
-        model = sys.argv[3]
+        model = validate_model_name(sys.argv[3])
         print(f"Pulling model: {model}...")
-        run(f"{ollama_cmd} pull {model}")
+        run(ollama_base + ["pull", model])
         print(f"Model '{model}' is ready!")
     elif subcmd == "remove":
         if len(sys.argv) < 4:
             print("Usage: manage.py models remove <model-name>")
             return
-        model = sys.argv[3]
+        model = validate_model_name(sys.argv[3])
         print(f"Removing model: {model}...")
-        run(f"{ollama_cmd} rm {model}")
+        run(ollama_base + ["rm", model])
         print(f"Model '{model}' removed.")
     else:
         print(f"Unknown subcommand: {subcmd}. Use: list, pull, or remove")
