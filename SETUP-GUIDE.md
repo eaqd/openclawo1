@@ -1,365 +1,277 @@
 # OpenClaw Setup Guide — Windows PowerShell
 
 You have **Ollama running** and **qwen3.5:4b pulled** on your Windows PC.
-This guide walks you through every step in **PowerShell** to get the OpenClaw
-web UI running at `http://localhost:18789` in your browser.
+Two paths to get chatting:
 
-> If you tried `ollama serve` and got "bind: Only one usage of each socket
-> address" — that means **Ollama is already running**. That's good. Skip
-> straight to Step 1.
+- **Quick Start** — Web UI only, no npm needed, 30 seconds
+- **Full Setup** — Install openclaw for CLI, skills, Telegram (takes longer but much more powerful)
+
+> If `ollama serve` gives "bind: Only one usage of each socket address"
+> — **Ollama is already running.** That's good. Don't run it again.
 
 ---
 
-## Step 1: Confirm Ollama and your model are ready
+# Quick Start — Chat Now (No npm needed)
 
-Open **PowerShell** and run:
+The web UI is a standalone HTML file that talks directly to your Ollama.
+No Node.js, no npm, no extra installs.
+
+### Step 1: Clone the repo (skip if already done)
 
 ```powershell
-ollama list
+cd $env:USERPROFILE
+git clone https://github.com/eaqd/openclawo1.git
 ```
 
-You should see `qwen3.5:4b` in the list. Now verify the API is responding:
+### Step 2: Allow Ollama to accept browser requests
+
+Ollama blocks browser requests by default. You need to set this once:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("OLLAMA_ORIGINS", "*", "User")
+```
+
+Now **restart Ollama**: right-click the Ollama icon in your system tray
+(bottom-right of taskbar) and click **Quit**. Then open Ollama again from
+your Start Menu. Wait a few seconds for it to start.
+
+Verify it's running:
 
 ```powershell
 Invoke-RestMethod http://localhost:11434/api/tags
 ```
 
-You should see output showing your model. If this works, Ollama is running
-and ready. **Do not run `ollama serve` again** — it's already running.
+### Step 3: Serve the web UI
+
+```powershell
+cd $env:USERPROFILE\openclawo1\web
+python -m http.server 8080
+```
+
+Leave this PowerShell window open.
+
+### Step 4: Open your browser
+
+Go to:
+
+```
+http://localhost:8080
+```
+
+You should see the OpenClaw dark-themed chat interface.
+
+### Step 5: Set your model
+
+1. Click the **gear icon** (top-right corner)
+2. **Ollama API URL:** `http://localhost:11434` (should already be set)
+3. **Model:** Change from `miniclaw` to `qwen3.5:4b`
+4. Click **"Save & Connect"**
+
+The dot should turn **green** ("Connected").
+
+### Step 6: Chat!
+
+Type a message and press Enter. Responses come from your local Qwen 3.5:4b.
+No internet needed, no API keys, everything runs on your PC.
+
+**To stop:** Press Ctrl+C in the PowerShell window running the server.
+
+**To start again next time:**
+```powershell
+cd $env:USERPROFILE\openclawo1\web
+python -m http.server 8080
+# Then open http://localhost:8080
+```
 
 ---
 
-## Step 2: Check if you have Node.js
+# Full Setup — OpenClaw with CLI, Skills, and Telegram
+
+This installs the full OpenClaw package. Takes longer but gives you:
+- 52 built-in skills (code generation, data analysis, web search, etc.)
+- Terminal UI and CLI chat
+- Telegram bot integration
+- Model management and diagnostics
+
+You can do this now or later. The Quick Start above works independently.
+
+### Step 1: Install Node.js (if you don't have it)
 
 ```powershell
 node --version
 ```
 
-You need **v20 or higher**. If it prints `v20.x.x`, `v22.x.x`, etc., skip to Step 3.
+Need v20+. If missing:
 
-**If Node.js is missing or too old:**
-
-Option A — Using winget (easiest):
 ```powershell
 winget install OpenJS.NodeJS.LTS
 ```
 
-Option B — Manual download:
-Go to https://nodejs.org and download the **LTS** installer. Run it, accept
-defaults, and restart PowerShell when done.
+Close and reopen PowerShell after installing.
 
-After installing, **close and reopen PowerShell**, then verify:
-
-```powershell
-node --version
-npm --version
-```
-
-Both should print version numbers.
-
----
-
-## Step 3: Clone the repo
-
-Pick a folder where you want to keep this project. For example, your home
-directory:
-
-```powershell
-cd $env:USERPROFILE
-git clone https://github.com/eaqd/openclawo1.git
-cd openclawo1
-```
-
-Verify you're in the right place:
-
-```powershell
-dir
-```
-
-You should see files like `run.sh`, `scripts`, `web`, `config`, etc.
-
----
-
-## Step 4: Install OpenClaw
+### Step 2: Install OpenClaw
 
 ```powershell
 npm install -g openclaw
 ```
 
-Wait for it to finish (may take a minute). Then verify:
+This takes a while (large package with many dependencies). The `warn deprecated`
+messages are normal — they're just warnings, not errors. Let it finish.
+
+Verify when done:
 
 ```powershell
 openclaw --version
 ```
 
-It should print a version number like `2026.4.x`.
-
----
-
-## Step 5: Set the environment variable
-
-OpenClaw needs this variable to talk to your local Ollama.
-
-**For this PowerShell session (temporary):**
+### Step 3: Set the environment variable
 
 ```powershell
+# For this session
 $env:OLLAMA_API_KEY = "ollama-local"
-```
 
-**To make it permanent (persists after restarting PowerShell/PC):**
-
-```powershell
+# Permanent (persists after restart)
 [System.Environment]::SetEnvironmentVariable("OLLAMA_API_KEY", "ollama-local", "User")
 ```
 
-> After setting it permanently, close and reopen PowerShell for it to take
-> effect. Or just keep using `$env:OLLAMA_API_KEY = "ollama-local"` at the
-> start of each session until you restart.
-
----
-
-## Step 6: Copy the config files
-
-These commands create the OpenClaw config directory and copy the settings
-from this repo:
+### Step 4: Copy config files
 
 ```powershell
-# Create the config directories
+cd $env:USERPROFILE\openclawo1
+
+# Create config directories
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openclaw\workspace"
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openclaw\skills"
 
-# Copy the OpenClaw config (sets qwen3.5:4b as your model)
+# Copy config (sets qwen3.5:4b as your model)
 Copy-Item config\openclaw.json5 "$env:USERPROFILE\.openclaw\openclaw.json"
 
-# Copy the environment file
+# Copy env file
 Copy-Item .env.example .env
 ```
 
-This configures OpenClaw with:
-- **Primary model:** `ollama/qwen3.5:4b` (your local Qwen 3.5)
-- **Fallbacks:** `qwen3.5:2b`, `qwen3.5:0.8b` (if you pull them later)
-- **52 bundled skills** enabled
-- **Gateway mode:** local (everything stays on your machine)
-
----
-
-## Step 7: Start the OpenClaw gateway
-
-Make sure the env var is set, then start the gateway:
+### Step 5: Start the OpenClaw gateway
 
 ```powershell
 $env:OLLAMA_API_KEY = "ollama-local"
 openclaw gateway run --bind loopback --port 18789
 ```
 
-**Leave this PowerShell window open.** The gateway needs to keep running.
+Leave this window open.
 
-You should see output indicating the gateway has started. If you see errors,
-check the Troubleshooting section below.
-
----
-
-## Step 8: Open the Web UI in your browser
-
-Open **Chrome**, **Edge**, **Firefox**, or any browser and go to:
+### Step 6: Open the full Web UI
 
 ```
 http://localhost:18789
 ```
 
-**What you should see:**
+This is the gateway-powered UI with all 52 skills active.
 
-1. A dark-themed chat interface with an orange accent color
-2. A **green dot** in the top-right corner that says "Connected"
-3. A sidebar on the left with "Sessions" and "Skills"
-4. A welcome screen with chips: "Say hello", "Write code", "Explain concept"
-5. A text input box at the bottom
+### Step 7: Verify
 
-> **If the dot is red** ("Disconnected"), click the gear icon and make sure
-> the Ollama API URL is set to `http://localhost:11434`. Click "Save & Connect".
-
----
-
-## Step 9: Set the model in the Web UI
-
-Click the **gear icon** (top-right corner) to open settings:
-
-1. **Ollama API URL:** `http://localhost:11434` (should already be set)
-2. **Gateway Token:** Leave blank
-3. **Model:** Change this from `miniclaw` to `qwen3.5:4b`
-
-Click **"Save & Connect"**. The dot should turn green.
-
----
-
-## Step 10: Test it
-
-Type a message in the chat box and press Enter. For example:
-
-- "Hello! What can you help me with?"
-- "Write me a fibonacci function in Python"
-- "Explain what a REST API is"
-
-The response comes from your **local Qwen 3.5:4b model** — no internet, no
-cloud, no API keys needed.
-
----
-
-## Step 11: Verify everything (optional)
-
-Open a **new PowerShell window** (keep the gateway running in the other one):
+Open a new PowerShell window:
 
 ```powershell
-# 1. Is Ollama running with your model?
+# Check Ollama
 Invoke-RestMethod http://localhost:11434/api/tags
-# Should show qwen3.5:4b in the models list
 
-# 2. Is the OpenClaw gateway healthy?
+# Check gateway
 Invoke-RestMethod http://localhost:18789/health
-# Should return status: ok
 
-# 3. Can OpenClaw talk to the model via CLI?
-$env:OLLAMA_API_KEY = "ollama-local"
-openclaw agent --message "Say hello in one sentence"
-# Should get a response from Qwen 3.5
-```
-
-If all three work, you're fully set up.
-
----
-
-## Everyday Usage
-
-**Starting OpenClaw** (every time you want to use it):
-
-Ollama usually starts automatically with Windows (runs as a service in the
-system tray). If not, open a PowerShell window and run `ollama serve`.
-
-Then open a PowerShell window:
-
-```powershell
-cd $env:USERPROFILE\openclawo1
-$env:OLLAMA_API_KEY = "ollama-local"
-openclaw gateway run --bind loopback --port 18789
-```
-
-Then open your browser to `http://localhost:18789`.
-
-**Stopping:**
-
-Press **Ctrl+C** in the PowerShell window where the gateway is running.
-
-**Quick test without the web UI:**
-
-```powershell
+# Test CLI chat
 $env:OLLAMA_API_KEY = "ollama-local"
 openclaw agent --message "hello"
 ```
 
 ---
 
-## Adding More Models Later
+## Everyday Usage
 
-Pull any Ollama model — they show up in OpenClaw automatically:
+### Quick Start path (web UI only)
 
 ```powershell
-ollama pull qwen3.5:9b           # Best quality (~8GB RAM needed)
+# Ollama should already be running (check system tray)
+cd $env:USERPROFILE\openclawo1\web
+python -m http.server 8080
+# Open http://localhost:8080
+```
+
+### Full Setup path (with gateway)
+
+```powershell
+# Ollama should already be running (check system tray)
+cd $env:USERPROFILE\openclawo1
+$env:OLLAMA_API_KEY = "ollama-local"
+openclaw gateway run --bind loopback --port 18789
+# Open http://localhost:18789
+```
+
+**Stopping:** Press Ctrl+C in the PowerShell window.
+
+---
+
+## Adding More Models
+
+```powershell
+ollama pull qwen3.5:9b           # Best quality (~8GB RAM)
 ollama pull qwen3.5:2b           # Lighter (~3GB)
 ollama pull qwen3.5:0.8b         # Ultra-light
 ollama pull phi3:mini             # Microsoft's compact model
 ```
 
-Switch the default model:
+Switch model in the web UI: click gear icon, change the Model field, Save.
 
+Or via CLI (Full Setup only):
 ```powershell
 $env:OLLAMA_API_KEY = "ollama-local"
 openclaw config set agents.defaults.model.primary "ollama/qwen3.5:9b"
 ```
 
-Then restart the gateway (Ctrl+C, then start it again).
-
-You can also switch models in the **web UI gear icon** without restarting.
-
 ---
 
-## Adding External LLM APIs (OpenAI, Anthropic, etc.)
+## Adding External LLM APIs (Full Setup only)
 
-Add cloud LLMs alongside your local model. Your Qwen 3.5 stays as a fallback.
-
-**OpenAI:**
 ```powershell
 $env:OLLAMA_API_KEY = "ollama-local"
-openclaw config set models.providers.openai.apiKey "sk-your-key-here"
+
+# OpenAI
+openclaw config set models.providers.openai.apiKey "sk-your-key"
 openclaw config set agents.defaults.model.primary "openai/gpt-4o"
 openclaw config set agents.defaults.model.fallbacks '["ollama/qwen3.5:4b"]'
-```
 
-**Anthropic (Claude):**
-```powershell
-$env:OLLAMA_API_KEY = "ollama-local"
-openclaw config set models.providers.anthropic.apiKey "sk-ant-your-key-here"
+# Anthropic (Claude)
+openclaw config set models.providers.anthropic.apiKey "sk-ant-your-key"
 openclaw config set agents.defaults.model.primary "anthropic/claude-sonnet-4-20250514"
-```
 
-**Groq (fast inference):**
-```powershell
-$env:OLLAMA_API_KEY = "ollama-local"
+# Groq
 openclaw config set models.providers.groq.apiKey "gsk_your-key"
 openclaw config set models.providers.groq.baseUrl "https://api.groq.com/openai/v1"
 openclaw config set agents.defaults.model.primary "groq/llama-3.3-70b"
 ```
 
-**Or edit the config file directly:**
-
-Open this file in Notepad or VS Code:
-
+Or edit the config directly:
 ```powershell
 notepad "$env:USERPROFILE\.openclaw\openclaw.json"
 ```
 
-Add a `models.providers` section:
-
-```json5
-{
-  agents: {
-    defaults: {
-      model: {
-        primary: "openai/gpt-4o",
-        fallbacks: ["ollama/qwen3.5:4b"],
-      },
-    },
-  },
-  models: {
-    providers: {
-      openai:    { apiKey: "sk-..." },
-      anthropic: { apiKey: "sk-ant-..." },
-      groq:      { apiKey: "gsk_...", baseUrl: "https://api.groq.com/openai/v1" },
-    },
-  },
-}
-```
-
-After any config changes, restart the gateway (Ctrl+C, start again).
-
 ---
 
-## Telegram Bot Integration (Optional)
+## Telegram Bot Integration (Full Setup only)
 
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, run `/newbot`, copy the token
 2. Get your user ID from [@userinfobot](https://t.me/userinfobot)
-3. Configure in PowerShell:
+3. Configure:
    ```powershell
    $env:OLLAMA_API_KEY = "ollama-local"
    openclaw config set channels.telegram.enabled true
    openclaw config set channels.telegram.botToken "YOUR_BOT_TOKEN"
    openclaw config set channels.telegram.allowFrom '["YOUR_USER_ID"]'
    ```
-4. Restart the gateway
-5. Message your bot on Telegram — it responds using your local model
+4. Restart the gateway (Ctrl+C, start again)
 
 ---
 
-## Management Commands
+## Management Commands (Full Setup only)
 
 ```powershell
 python scripts\manage.py status     # Health check + models
@@ -372,19 +284,19 @@ python scripts\manage.py logs       # Tail logs (Ctrl+C to exit)
 | Port | Service | URL |
 |------|---------|-----|
 | **11434** | Ollama (LLM engine) | http://localhost:11434 |
-| **18789** | OpenClaw (web UI + gateway) | http://localhost:18789 |
+| **8080** | Web UI (Quick Start) | http://localhost:8080 |
+| **18789** | OpenClaw gateway (Full Setup) | http://localhost:18789 |
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| `ollama serve` says "bind: Only one usage" | **Ollama is already running.** This is fine. Skip `ollama serve`. |
-| Red dot in web UI | Ollama isn't running. Check system tray for Ollama icon, or run `ollama serve` in a new PowerShell. |
-| "Connection refused" on :11434 | Same — Ollama not running. |
-| "Connection refused" on :18789 | Gateway not running. Start it with `openclaw gateway run --bind loopback --port 18789` |
-| `openclaw` not found | Run `npm install -g openclaw` again. Close and reopen PowerShell. |
-| `node` not found | Install Node.js: `winget install OpenJS.NodeJS.LTS`. Reopen PowerShell. |
-| Model responses are generic / "miniclaw" | Click gear icon in web UI, change model to `qwen3.5:4b`, click Save. |
-| Slow first response | Normal — the model loads into memory on first query. Subsequent ones are faster. |
-| Out of memory | Switch to lighter model: `ollama pull qwen3.5:2b` and change model in web UI settings. |
-| Config changes not taking effect | Restart the gateway: Ctrl+C then start again. |
+| `ollama serve` says "bind: Only one usage" | Ollama is already running. This is fine. Skip it. |
+| Red dot / "Disconnected" in web UI | 1. Is Ollama running? Check system tray. 2. Did you set `OLLAMA_ORIGINS=*`? See Quick Start Step 2. 3. Did you restart Ollama after setting it? |
+| CORS error in browser console | Set `OLLAMA_ORIGINS=*` (see Quick Start Step 2), restart Ollama. |
+| `npm install -g openclaw` is slow | Normal — large package. Let it run. Use Quick Start in the meantime. |
+| `openclaw` not recognized | npm install didn't finish, or need to reopen PowerShell. |
+| `node` not found | Install: `winget install OpenJS.NodeJS.LTS`. Reopen PowerShell. |
+| Model responses are generic | Click gear, change model from "miniclaw" to `qwen3.5:4b`, Save. |
+| Slow first response | Normal — model loads into memory on first query. Faster after that. |
+| Out of memory | Use lighter model: `ollama pull qwen3.5:2b`, change in gear settings. |
