@@ -115,13 +115,20 @@ info "Step 4/5: Configuring OpenClaw..."
 
 export OLLAMA_API_KEY="ollama-local"
 
-# Set config via CLI
-openclaw config set gateway.mode local 2>/dev/null
-openclaw config set agents.defaults.workspace "~/.openclaw/workspace" 2>/dev/null
-openclaw config set agents.defaults.model.primary "ollama/$MODEL" 2>/dev/null
-openclaw config set agents.defaults.memorySearch.enabled false 2>/dev/null
-
+# Create directories
 mkdir -p ~/.openclaw/workspace ~/.openclaw/skills ~/.openclaw/agents/main/sessions "$SCRIPT_DIR/logs"
+
+# Copy config file (correct schema for OpenClaw 2026.4.x)
+cp "$SCRIPT_DIR/config/openclaw.json5" ~/.openclaw/openclaw.json 2>/dev/null || true
+
+# Set model via CLI (overrides config file default)
+openclaw config set gateway.mode local 2>/dev/null
+openclaw config set agents.defaults.model.primary "ollama/$MODEL" 2>/dev/null
+openclaw config set agents.defaults.model.reasoning false 2>/dev/null
+openclaw config set models.default "ollama/$MODEL" 2>/dev/null
+
+# Validate config
+openclaw doctor --fix 2>/dev/null || true
 
 # Copy skills if any
 if [ -d "$SCRIPT_DIR/skills" ] && [ "$(ls -A "$SCRIPT_DIR/skills" 2>/dev/null)" ]; then

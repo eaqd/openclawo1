@@ -148,7 +148,16 @@ Copy-Item config\openclaw.json5 "$env:USERPROFILE\.openclaw\openclaw.json"
 
 # Copy env file
 Copy-Item .env.example .env
+
+# Validate config (fix any issues)
+openclaw doctor --fix
 ```
+
+> If you see "Unrecognized key" errors, run `openclaw doctor --fix` to
+> auto-repair the config. Then set your model manually:
+> ```powershell
+> openclaw config set agents.defaults.model.primary "ollama/qwen3.5:4b"
+> ```
 
 ### Step 5: Start the OpenClaw gateway
 

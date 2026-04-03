@@ -1,19 +1,22 @@
 // ~/.openclaw/openclaw.json
 // OpenClaw + Ollama Configuration (free local LLM)
-// Docs: https://docs.openclaw.ai/providers/ollama
+// Docs: https://docs.openclaw.ai/gateway/configuration
 //
-// IMPORTANT: Do NOT add models.providers.ollama here unless Ollama is on
-// a remote host. Without it, OpenClaw auto-discovers local Ollama models
-// when OLLAMA_API_KEY is set (any value works).
+// Valid root keys: gateway, agents, models, channels, commands,
+// auth, env, plugins, hooks, cron, skills
 {
-  identity: {
-    name: "OpenClaw",
-    theme: "helpful coding assistant",
-    emoji: "🦞",
-  },
-
   gateway: {
     mode: "local",
+  },
+
+  models: {
+    default: "ollama/qwen3.5:4b",
+    providers: {
+      ollama: {
+        apiBase: "http://localhost:11434/v1",
+        type: "openai-compatible",
+      },
+    },
   },
 
   agents: {
@@ -22,6 +25,7 @@
       model: {
         primary: "ollama/qwen3.5:4b",
         fallbacks: ["ollama/qwen3.5:2b", "ollama/qwen3.5:0.8b"],
+        reasoning: false,  // Qwen 3.5 "thinking" mode can cause empty streaming responses
       },
       memorySearch: {
         enabled: false,  // requires an embedding provider; enable if you add one
@@ -38,10 +42,4 @@
   //     groups: { "*": { requireMention: true } },
   //   },
   // },
-
-  logging: {
-    level: "info",
-    consoleLevel: "info",
-    consoleStyle: "pretty",
-  },
 }
