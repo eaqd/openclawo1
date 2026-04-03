@@ -352,6 +352,29 @@ def health():
     return "MiniClaw Bridge Server - Ollama-compatible LLM API"
 
 
+@app.route("/ui", methods=["GET"])
+def serve_ui():
+    """Serve the web chat UI."""
+    import os
+    ui_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "web", "index.html"
+    )
+    if os.path.exists(ui_path):
+        with open(ui_path) as f:
+            return f.read(), 200, {"Content-Type": "text/html"}
+    return "Web UI not found. Place index.html in ../web/", 404
+
+
+@app.after_request
+def add_cors(response):
+    """Allow cross-origin requests for the API."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+
 @app.route("/api/version", methods=["GET"])
 def version():
     return jsonify({"version": "0.20.0"})

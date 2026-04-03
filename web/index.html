@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw — AI Assistant</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #f97316;
+    --accent-dim: #c2410c; --user-bg: #1c2333; --bot-bg: #1a1e2e;
+    --code-bg: #0d1117; --green: #3fb950; --red: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column;
+  }
+  /* Header */
+  .header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+    flex-shrink: 0;
+  }
+  .header .logo { font-size: 28px; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .status {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted);
+  }
+  .header .status .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+  }
+  .header .status .dot.off { background: var(--red); }
+
+  /* Sidebar */
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .sidebar {
+    width: 240px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: 16px; overflow-y: auto; flex-shrink: 0;
+  }
+  .sidebar h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted); margin-bottom: 8px;
+  }
+  .sidebar .item {
+    padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    margin-bottom: 2px; color: var(--text-muted);
+  }
+  .sidebar .item:hover { background: var(--border); color: var(--text); }
+  .sidebar .item.active { background: var(--accent-dim); color: white; }
+  .sidebar .info-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; margin-top: 16px; font-size: 12px; color: var(--text-muted);
+  }
+  .sidebar .info-box strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+  /* Chat */
+  .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .messages {
+    flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .message { display: flex; gap: 12px; max-width: 85%; animation: fadeIn 0.3s; }
+  .message.user { align-self: flex-end; flex-direction: row-reverse; }
+  .message .avatar {
+    width: 32px; height: 32px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 16px;
+    flex-shrink: 0;
+  }
+  .message.bot .avatar { background: var(--accent-dim); }
+  .message.user .avatar { background: #2563eb; }
+  .message .bubble {
+    padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .message.bot .bubble { background: var(--bot-bg); border: 1px solid var(--border); }
+  .message.user .bubble { background: #1d4ed8; color: white; }
+  .message .bubble code {
+    background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+  }
+  .message .bubble pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; margin: 8px 0; overflow-x: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+  }
+
+  /* Input */
+  .input-area {
+    padding: 16px 20px; background: var(--surface);
+    border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .input-row { display: flex; gap: 10px; max-width: 800px; margin: 0 auto; }
+  .input-row textarea {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; color: var(--text);
+    font-family: inherit; font-size: 14px; resize: none;
+    outline: none; min-height: 44px; max-height: 120px;
+  }
+  .input-row textarea:focus { border-color: var(--accent); }
+  .input-row textarea::placeholder { color: var(--text-muted); }
+  .input-row button {
+    background: var(--accent); color: white; border: none;
+    border-radius: 10px; padding: 0 20px; font-size: 14px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .input-row button:hover { background: var(--accent-dim); }
+  .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hint { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+
+  /* Welcome */
+  .welcome {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px; color: var(--text-muted); text-align: center;
+    padding: 40px;
+  }
+  .welcome .big { font-size: 64px; }
+  .welcome h2 { font-size: 24px; color: var(--text); }
+  .welcome p { max-width: 400px; line-height: 1.6; }
+  .welcome .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+  .welcome .chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 8px 16px; cursor: pointer; font-size: 13px;
+    color: var(--text);
+  }
+  .welcome .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Config modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 100; align-items: center; justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; width: 440px; max-width: 90%;
+  }
+  .modal h2 { margin-bottom: 16px; font-size: 18px; }
+  .modal label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+  .modal input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px;
+    margin-bottom: 12px; outline: none;
+  }
+  .modal input:focus { border-color: var(--accent); }
+  .modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .modal button {
+    padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .modal button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+  @media (max-width: 768px) { .sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="logo">🦞</span>
+  <h1>OpenClaw</h1>
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Connecting...</span>
+    <span style="margin-left:12px;cursor:pointer" onclick="openConfig()">⚙️</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <h3>Sessions</h3>
+    <div class="item active">💬 Main Chat</div>
+    <div class="item">📝 New Session</div>
+
+    <h3 style="margin-top:20px">Skills (9 ready)</h3>
+    <div class="item">🔧 Code Generation</div>
+    <div class="item">📊 Data Analysis</div>
+    <div class="item">🔍 Web Search</div>
+    <div class="item">📅 Calendar</div>
+    <div class="item">📝 Notes</div>
+
+    <div class="info-box">
+      <strong>Model</strong>
+      miniclaw:latest (bridge)<br>
+      <span style="font-size:11px">For full AI: pull a real model</span>
+    </div>
+
+    <div class="info-box">
+      <strong>Sandbox</strong>
+      PID isolation ✓<br>
+      Memory: 6GB limit ✓<br>
+      CPU: 50% limit ✓<br>
+      Read-only rootfs ✓
+    </div>
+  </div>
+
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="big">🦞</div>
+        <h2>Welcome to OpenClaw</h2>
+        <p>Your personal AI assistant running locally with Ollama. Free, private, and sandboxed.</p>
+        <div class="chips">
+          <div class="chip" onclick="sendQuick('Hello! What can you help me with?')">👋 Say hello</div>
+          <div class="chip" onclick="sendQuick('Write me a fibonacci function in Python')">💻 Write code</div>
+          <div class="chip" onclick="sendQuick('Help me understand recursion')">📚 Explain concept</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="input" placeholder="Message OpenClaw..." rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
+        <button onclick="send()" id="sendBtn">Send</button>
+      </div>
+      <div class="hint">Enter to send · Shift+Enter for new line · Powered by MiniClaw Bridge</div>
+    </div>
+  </div>
+</div>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal">
+    <h2>⚙️ Server Configuration</h2>
+    <label>Ollama API URL</label>
+    <input id="cfgOllama" value="http://localhost:11434" placeholder="http://localhost:11434">
+    <label>Gateway Token</label>
+    <input id="cfgToken" value="openclaw-sandbox-2026" placeholder="your-token">
+    <label>Model</label>
+    <input id="cfgModel" value="miniclaw" placeholder="miniclaw or qwen2.5-coder:3b">
+    <div class="btn-row">
+      <button onclick="closeConfig()">Cancel</button>
+      <button class="primary" onclick="saveConfig()">Save & Connect</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Config ──
+  let CONFIG = {
+    ollamaUrl: localStorage.getItem('oc_url') || 'http://localhost:11434',
+    token: localStorage.getItem('oc_token') || 'openclaw-sandbox-2026',
+    model: localStorage.getItem('oc_model') || 'miniclaw',
+  };
+
+  const $messages = document.getElementById('messages');
+  const $input = document.getElementById('input');
+  const $sendBtn = document.getElementById('sendBtn');
+  const $statusDot = document.getElementById('statusDot');
+  const $statusText = document.getElementById('statusText');
+  const $welcome = document.getElementById('welcome');
+
+  // ── Status check ──
+  async function checkStatus() {
+    try {
+      const res = await fetch(CONFIG.ollamaUrl + '/api/tags');
+      if (res.ok) {
+        $statusDot.className = 'dot';
+        $statusText.textContent = 'Connected';
+        return true;
+      }
+    } catch(e) {}
+    $statusDot.className = 'dot off';
+    $statusText.textContent = 'Disconnected — click ⚙️ to configure';
+    return false;
+  }
+
+  // ── Chat ──
+  function addMessage(role, text) {
+    if ($welcome) $welcome.style.display = 'none';
+    const div = document.createElement('div');
+    div.className = 'message ' + role;
+    const avatar = role === 'bot' ? '🦞' : '👤';
+    // Parse markdown code blocks
+    let html = text
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    div.innerHTML = `<div class="avatar">${avatar}</div><div class="bubble">${html}</div>`;
+    $messages.appendChild(div);
+    $messages.scrollTop = $messages.scrollHeight;
+    return div;
+  }
+
+  async function send() {
+    const text = $input.value.trim();
+    if (!text) return;
+    $input.value = '';
+    $input.style.height = 'auto';
+    addMessage('user', text);
+
+    $sendBtn.disabled = true;
+    $sendBtn.textContent = '...';
+
+    const botDiv = addMessage('bot', '');
+    const bubble = botDiv.querySelector('.bubble');
+    bubble.textContent = 'Thinking...';
+
+    try {
+      const res = await fetch(CONFIG.ollamaUrl + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: CONFIG.model,
+          messages: [{ role: 'user', content: text }],
+          stream: true,
+        }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      bubble.textContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.message && data.message.content) {
+              fullText += data.message.content;
+              // Re-render with markdown
+              let html = fullText
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+              bubble.innerHTML = html;
+              $messages.scrollTop = $messages.scrollHeight;
+            }
+          } catch(e) {}
+        }
+      }
+    } catch(e) {
+      bubble.textContent = 'Error: Could not connect to ' + CONFIG.ollamaUrl + '. Click ⚙️ to configure.';
+      bubble.style.color = '#f85149';
+    }
+
+    $sendBtn.disabled = false;
+    $sendBtn.textContent = 'Send';
+  }
+
+  function sendQuick(text) {
+    $input.value = text;
+    send();
+  }
+
+  // ── Config modal ──
+  function openConfig() {
+    document.getElementById('cfgOllama').value = CONFIG.ollamaUrl;
+    document.getElementById('cfgToken').value = CONFIG.token;
+    document.getElementById('cfgModel').value = CONFIG.model;
+    document.getElementById('configModal').classList.add('active');
+  }
+  function closeConfig() { document.getElementById('configModal').classList.remove('active'); }
+  function saveConfig() {
+    CONFIG.ollamaUrl = document.getElementById('cfgOllama').value.replace(/\/+$/, '');
+    CONFIG.token = document.getElementById('cfgToken').value;
+    CONFIG.model = document.getElementById('cfgModel').value;
+    localStorage.setItem('oc_url', CONFIG.ollamaUrl);
+    localStorage.setItem('oc_token', CONFIG.token);
+    localStorage.setItem('oc_model', CONFIG.model);
+    closeConfig();
+    checkStatus();
+  }
+
+  // Auto-resize textarea
+  $input.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  // Init
+  checkStatus();
+  setInterval(checkStatus, 15000);
+  $input.focus();
+</script>
+</body>
+</html>
