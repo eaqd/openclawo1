@@ -4,13 +4,19 @@
 //
 // Valid root keys: gateway, agents, models, channels, commands,
 // auth, env, plugins, hooks, cron, skills
+//
+// Model RAM requirements (actual runtime):
+//   qwen3.5:0.8b  ~2 GB   (works on 8GB systems)
+//   qwen3.5:2b    ~4-5 GB (works on 8GB, tight)
+//   qwen3.5:4b    ~14 GB  (needs 16GB+ system RAM)
+//   qwen3.5:9b    ~20 GB  (needs 32GB+ system RAM)
 {
   gateway: {
     mode: "local",
   },
 
   models: {
-    default: "ollama/qwen3.5:4b",
+    default: "ollama/qwen3.5:0.8b",
     providers: {
       ollama: {
         apiBase: "http://localhost:11434/v1",
@@ -23,8 +29,10 @@
     defaults: {
       workspace: "~/.openclaw/workspace",
       model: {
-        primary: "ollama/qwen3.5:4b",
-        fallbacks: ["ollama/qwen3.5:2b", "ollama/qwen3.5:0.8b"],
+        // Default: ultra-light model that runs on 8GB RAM
+        // Change to qwen3.5:4b if you have 16GB+ RAM
+        primary: "ollama/qwen3.5:0.8b",
+        fallbacks: ["ollama/qwen3.5:2b"],
         reasoning: false,  // Qwen 3.5 "thinking" mode can cause empty streaming responses
       },
       memorySearch: {

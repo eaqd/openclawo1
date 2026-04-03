@@ -72,7 +72,8 @@ The management CLI auto-detects whether you're running Docker or direct mode.
 
 ## Ollama Models
 
-Default: `qwen3.5:4b` — latest Qwen 3.5 with native tool calling, runs on 8GB RAM.
+Default: `qwen3.5:0.8b` — ultra-light Qwen 3.5 with native tool calling, runs on 8GB RAM.
+For 16GB+ systems, upgrade to `qwen3.5:4b` for better quality.
 
 ```bash
 # List installed models

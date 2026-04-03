@@ -1,6 +1,6 @@
 # OpenClaw Setup Guide — Windows PowerShell
 
-You have **Ollama running** and **qwen3.5:4b pulled** on your Windows PC.
+You have **Ollama running** on your Windows PC.
 Two paths to get chatting:
 
 - **Quick Start** — Web UI only, no npm needed, 30 seconds
@@ -8,6 +8,19 @@ Two paths to get chatting:
 
 > If `ollama serve` gives "bind: Only one usage of each socket address"
 > — **Ollama is already running.** That's good. Don't run it again.
+
+## Choose the right model for your RAM
+
+| Your RAM | Model to pull | Command |
+|----------|---------------|---------|
+| **8 GB** | `qwen3.5:0.8b` (recommended) | `ollama pull qwen3.5:0.8b` |
+| **8 GB** | `qwen3.5:2b` (better, tight fit) | `ollama pull qwen3.5:2b` |
+| **16 GB+** | `qwen3.5:4b` (best balance) | `ollama pull qwen3.5:4b` |
+| **32 GB+** | `qwen3.5:9b` (highest quality) | `ollama pull qwen3.5:9b` |
+
+> **Important:** `qwen3.5:4b` needs ~14 GB of RAM at runtime. If you have
+> 8 GB, it will fail with "model requires more system memory" errors.
+> Use `qwen3.5:0.8b` instead — it's ~2 GB and works great on 8 GB systems.
 
 ---
 
@@ -64,7 +77,7 @@ You should see the OpenClaw dark-themed chat interface.
 
 1. Click the **gear icon** (top-right corner)
 2. **Ollama API URL:** `http://localhost:11434` (should already be set)
-3. **Model:** Change from `miniclaw` to `qwen3.5:4b`
+3. **Model:** Change from `miniclaw` to `qwen3.5:0.8b` (or `qwen3.5:4b` if you have 16GB+ RAM)
 4. Click **"Save & Connect"**
 
 The dot should turn **green** ("Connected").
@@ -143,7 +156,7 @@ cd $env:USERPROFILE\openclawo1
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openclaw\workspace"
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openclaw\skills"
 
-# Copy config (sets qwen3.5:4b as your model)
+# Copy config (sets qwen3.5:0.8b as default — safe for 8GB systems)
 Copy-Item config\openclaw.json5 "$env:USERPROFILE\.openclaw\openclaw.json"
 
 # Copy env file
@@ -156,7 +169,7 @@ openclaw doctor --fix
 > If you see "Unrecognized key" errors, run `openclaw doctor --fix` to
 > auto-repair the config. Then set your model manually:
 > ```powershell
-> openclaw config set agents.defaults.model.primary "ollama/qwen3.5:4b"
+> openclaw config set agents.defaults.model.primary "ollama/qwen3.5:0.8b"
 > ```
 
 ### Step 5: Start the OpenClaw gateway
@@ -306,6 +319,6 @@ python scripts\manage.py logs       # Tail logs (Ctrl+C to exit)
 | `npm install -g openclaw` is slow | Normal — large package. Let it run. Use Quick Start in the meantime. |
 | `openclaw` not recognized | npm install didn't finish, or need to reopen PowerShell. |
 | `node` not found | Install: `winget install OpenJS.NodeJS.LTS`. Reopen PowerShell. |
-| Model responses are generic | Click gear, change model from "miniclaw" to `qwen3.5:4b`, Save. |
+| Model responses are generic | Click gear, change model to `qwen3.5:0.8b` (8GB) or `qwen3.5:4b` (16GB+), Save. |
 | Slow first response | Normal — model loads into memory on first query. Faster after that. |
 | Out of memory | Use lighter model: `ollama pull qwen3.5:2b`, change in gear settings. |
