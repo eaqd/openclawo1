@@ -1,6 +1,8 @@
-# OpenClaw Web UI Setup Guide — Local PC with Qwen 3.5
+# OpenClaw Web UI Setup Guide
 
-Set up OpenClaw locally on your PC with Ollama + Qwen 3.5:4b as the LLM, a web UI for chatting, room to add more models later, and optional Telegram integration.
+Get OpenClaw running on your PC with the Qwen 3.5:4b model you already have in Ollama, view the web UI at localhost, and configure external LLM APIs later.
+
+**Prerequisites:** Ollama installed and `qwen3.5:4b` already pulled.
 
 ---
 
@@ -11,102 +13,165 @@ git clone https://github.com/eaqd/openclawo1.git
 cd openclawo1
 ```
 
-## Step 2: Run the installer
+## Step 2: Install OpenClaw
 
-**Option A — Direct Install (recommended):**
-
-```bash
-chmod +x setup-direct.sh
-./setup-direct.sh
-```
-
-This handles everything: installs Ollama, Node.js, OpenClaw, pulls the model, and configures it all. When prompted for a model, pick `qwen3.5:4b` (the default).
-
-**Option B — Docker (sandboxed):**
+You already have Ollama + Qwen 3.5, so you just need OpenClaw itself:
 
 ```bash
-python3 setup.py
+# Install Node.js if you don't have it
+# (check with: node --version)
+# Needs Node 20+
+
+# Install OpenClaw globally
+npm install -g openclaw
 ```
 
-Requires Docker + Docker Compose v2. Runs Ollama and OpenClaw in containers with memory limits (6GB Ollama, 2GB OpenClaw).
-
-## Step 3: Pull the Qwen 3.5 model
-
-If you used `setup-direct.sh`, it prompts you during setup. Otherwise, pull manually:
+## Step 3: Configure OpenClaw
 
 ```bash
-ollama pull qwen3.5:4b
+# Copy the environment template
+cp .env.example .env
+
+# Set the API key in your shell (add to ~/.bashrc to persist)
+export OLLAMA_API_KEY="ollama-local"
+
+# Apply the config from this repo
+mkdir -p ~/.openclaw/workspace ~/.openclaw/skills
+cp config/openclaw.json5 ~/.openclaw/openclaw.json
 ```
 
-~4GB download. Runs well on 8GB+ RAM. Supports **native tool calling** (required for OpenClaw skills).
+The config (`config/openclaw.json5`) sets:
+- Primary model: `ollama/qwen3.5:4b`
+- Fallbacks: `qwen3.5:2b`, `qwen3.5:0.8b`
+- Gateway mode: local
+- 52 bundled skills enabled
 
-## Step 4: Start the services
+## Step 4: Start everything
 
 ```bash
-# Quick launcher (starts bridge + gateway + TUI)
-./run.sh
+# Make sure Ollama is running first
+ollama serve    # skip if already running
 
-# Or start services individually:
-python3 scripts/manage.py start
+# Then start OpenClaw (one command)
+./run.sh --cli
 ```
 
-## Step 5: Open the Web UI
+Or start services manually:
 
-Once the gateway is running, open your browser:
+```bash
+export OLLAMA_API_KEY="ollama-local"
+
+# Start the gateway (web UI)
+openclaw gateway run --bind loopback --port 18789 --token openclaw-sandbox-2026
+```
+
+## Step 5: Open the Web UI in your browser
 
 ```
 http://localhost:18789
 ```
 
-The web UI features:
+You should see:
 - Dark theme chat interface with orange accents
+- Green health dot (top right) = connected to Ollama
 - Sidebar for managing conversations
-- Real-time health status indicator (green/red dot)
-- Code syntax highlighting
+- Code syntax highlighting in responses
 
-## Step 6: Verify everything works
+## Step 6: Verify
 
 ```bash
-# Check status
-python3 scripts/manage.py status
+# Check Ollama has your model
+curl http://localhost:11434/api/tags
 
-# Check installed models
-python3 scripts/manage.py models list
+# Check gateway is healthy
+curl http://localhost:18789/health
 
-# Send a test message
+# Send a test message via CLI
 OLLAMA_API_KEY=ollama-local openclaw agent --message "hello"
-
-# Or verify via curl
-curl http://localhost:11434/api/tags    # Should list qwen3.5:4b
-curl http://localhost:18789/health      # Should return OK
 ```
 
 ---
 
-## Adding More Models Later
+## Adding External LLM APIs (OpenAI, Anthropic, etc.)
+
+OpenClaw supports any OpenAI-compatible API. To add cloud LLMs alongside your local Qwen 3.5:
+
+### OpenAI
 
 ```bash
-# Pull additional Qwen 3.5 variants
-python3 scripts/manage.py models pull qwen3.5:2b    # Lighter (~3GB)
-python3 scripts/manage.py models pull qwen3.5:9b    # Best quality (~8GB)
-python3 scripts/manage.py models pull qwen3.5:0.8b  # Ultra-light, phone-friendly
+# Set the API key
+export OPENAI_API_KEY="sk-your-key-here"
 
-# Or any other Ollama-compatible model
+# Add to OpenClaw config
+openclaw config set models.providers.openai.apiKey "$OPENAI_API_KEY"
+
+# Switch to GPT-4 as primary (keep Ollama as fallback)
+openclaw config set agents.defaults.model.primary "openai/gpt-4o"
+openclaw config set agents.defaults.model.fallbacks '["ollama/qwen3.5:4b", "ollama/qwen3.5:2b"]'
+```
+
+### Anthropic (Claude)
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+
+openclaw config set models.providers.anthropic.apiKey "$ANTHROPIC_API_KEY"
+openclaw config set agents.defaults.model.primary "anthropic/claude-sonnet-4-20250514"
+```
+
+### Groq, Together, OpenRouter (OpenAI-compatible)
+
+```bash
+# Example: Groq
+openclaw config set models.providers.groq.apiKey "gsk_your-key"
+openclaw config set models.providers.groq.baseUrl "https://api.groq.com/openai/v1"
+openclaw config set agents.defaults.model.primary "groq/llama-3.3-70b"
+
+# Example: OpenRouter
+openclaw config set models.providers.openrouter.apiKey "sk-or-your-key"
+openclaw config set models.providers.openrouter.baseUrl "https://openrouter.ai/api/v1"
+```
+
+### Or edit the config file directly
+
+Edit `~/.openclaw/openclaw.json`:
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: {
+        primary: "openai/gpt-4o",             // cloud when available
+        fallbacks: ["ollama/qwen3.5:4b"],      // local fallback
+      },
+    },
+  },
+  models: {
+    providers: {
+      openai:    { apiKey: "sk-..." },
+      anthropic: { apiKey: "sk-ant-..." },
+      groq:      { apiKey: "gsk_...", baseUrl: "https://api.groq.com/openai/v1" },
+    },
+  },
+}
+```
+
+After changes, restart: `python3 scripts/manage.py restart`
+
+---
+
+## Adding More Local Models
+
+```bash
+# Pull additional Ollama models anytime
+ollama pull qwen3.5:9b           # Best quality (~8GB RAM)
+ollama pull qwen3.5:2b           # Lighter (~3GB)
 ollama pull phi3:mini
 ollama pull deepseek-coder:1.3b
 
-# Switch the default model
+# Switch default
 openclaw config set agents.defaults.model.primary "ollama/qwen3.5:9b"
 ```
-
-### Recommended Models (Qwen 3.5)
-
-| Model | RAM | Best For |
-|-------|-----|----------|
-| `qwen3.5:4b` | ~4GB | Best balance for 8GB systems (default) |
-| `qwen3.5:2b` | ~3GB | Lighter, phones + low-end devices |
-| `qwen3.5:0.8b` | ~2GB | Ultra-light, runs on phones |
-| `qwen3.5:9b` | ~8GB | Best quality (16GB+ RAM) |
 
 ## Telegram Bot Integration (Optional)
 
@@ -115,19 +180,25 @@ openclaw config set agents.defaults.model.primary "ollama/qwen3.5:9b"
 3. Configure:
 
    ```bash
-   # Direct mode
    openclaw config set channels.telegram.enabled true
    openclaw config set channels.telegram.botToken "YOUR_TOKEN"
    openclaw config set channels.telegram.allowFrom '["YOUR_USER_ID"]'
-
-   # Docker mode — add to .env file
-   TELEGRAM_BOT_TOKEN=your-token
-   TELEGRAM_ALLOWED_USERS=your-user-id
    ```
 
 4. Restart: `python3 scripts/manage.py restart`
 
 ---
+
+## Management Commands
+
+```bash
+python3 scripts/manage.py start      # Start Ollama + Gateway
+python3 scripts/manage.py stop       # Stop all services
+python3 scripts/manage.py restart    # Restart services
+python3 scripts/manage.py status     # Health check + models
+python3 scripts/manage.py logs       # Tail logs
+python3 scripts/manage.py models     # Manage Ollama models
+```
 
 ## Ports
 
@@ -140,20 +211,16 @@ openclaw config set agents.defaults.model.primary "ollama/qwen3.5:9b"
 
 | File | Purpose |
 |------|---------|
-| `setup-direct.sh` | Full automated installer (Ollama + OpenClaw + model) |
-| `setup.py` | Docker-based setup wizard |
-| `run.sh` | One-command launcher (bridge + gateway + TUI) |
-| `scripts/manage.py` | Service management CLI (start/stop/status/models) |
-| `web/index.html` | Standalone web chat UI |
-| `config/openclaw.json5` | OpenClaw app config (model, identity, logging) |
-| `config/telegram.json5` | Telegram bot config |
+| `run.sh` | One-command launcher |
+| `scripts/manage.py` | Service management CLI |
+| `web/index.html` | Web chat UI |
+| `config/openclaw.json5` | OpenClaw config (models, identity, logging) |
 | `.env.example` | Environment variables template |
-| `servers/miniclaw-bridge.py` | Fallback LLM bridge (pattern-matching, no GPU needed) |
-| `docker-compose.yml` | Docker service definitions |
+| `servers/miniclaw-bridge.py` | Fallback LLM bridge (no GPU needed) |
 
 ## Troubleshooting
 
-- **Models show as "missing":** Run `ollama pull qwen3.5:4b` to download.
-- **Ollama is slow / OOM:** Switch to a smaller model: `ollama pull qwen3.5:2b`
-- **Gateway won't start:** Run `OLLAMA_API_KEY=ollama-local openclaw doctor` for diagnostics.
-- **Telegram bot not responding:** Verify token and user ID, then `python3 scripts/manage.py restart`.
+- **Red dot in web UI:** Ollama isn't running. Start it with `ollama serve`.
+- **Models show as "missing":** Run `ollama pull qwen3.5:4b`.
+- **Gateway won't start:** Run `OLLAMA_API_KEY=ollama-local openclaw doctor`.
+- **External API errors:** Check your API key and provider config with `openclaw config get models.providers`.
