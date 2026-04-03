@@ -1,9 +1,6 @@
 <#
 .SYNOPSIS
     OpenClaw Sandbox - One-command Windows launcher.
-.DESCRIPTION
-    The single entry point for Windows users. Checks prerequisites, starts
-    Ollama, serves the web dashboard, and opens the browser.
 .EXAMPLE
     .\start.ps1                    # Start everything
     .\start.ps1 -Stop              # Stop all services
@@ -33,13 +30,11 @@ if (-not (Test-Path $PidDir)) { New-Item -ItemType Directory -Path $PidDir -Forc
 function Show-Banner {
     Write-Host ''
     Write-Host '  +====================================================+' -ForegroundColor Cyan
-    Write-Host '  |                                                    |' -ForegroundColor Cyan
     Write-Host '  |   ' -ForegroundColor Cyan -NoNewline
     Write-Host 'OpenClaw Sandbox' -ForegroundColor Green -NoNewline
     Write-Host '  --  AI on your machine       ' -NoNewline
     Write-Host '|' -ForegroundColor Cyan
     Write-Host '  |       Free . Local . Private                       |' -ForegroundColor Cyan
-    Write-Host '  |                                                    |' -ForegroundColor Cyan
     Write-Host '  +====================================================+' -ForegroundColor Cyan
     Write-Host ''
 }
@@ -50,16 +45,12 @@ function Write-Info ($msg) { Write-Host '  [..]  ' -ForegroundColor Blue   -NoNe
 function Write-Err  ($msg) { Write-Host '  [XX]  ' -ForegroundColor Red    -NoNewline; Write-Host $msg }
 
 function Test-Endpoint ([string]$Url) {
-    try {
-        $null = Invoke-RestMethod -Uri $Url -TimeoutSec 3 -ErrorAction Stop
-        return $true
-    } catch { return $false }
+    try { $null = Invoke-RestMethod -Uri $Url -TimeoutSec 3 -ErrorAction Stop; $true }
+    catch { $false }
 }
-
 function Save-Pid ([string]$Name, [int]$Id) {
     Set-Content -Path (Join-Path $PidDir "$Name.pid") -Value $Id
 }
-
 function Stop-NamedService ([string]$Name) {
     $f = Join-Path $PidDir "$Name.pid"
     if (Test-Path $f) {
@@ -71,7 +62,6 @@ function Stop-NamedService ([string]$Name) {
 
 # ── Prerequisites ──────────────────────────────────────────
 function Assert-Ollama {
-    # Check installation
     try {
         $ver = & ollama --version 2>&1
         Write-Ok "Ollama installed  ($ver)"
@@ -80,56 +70,35 @@ function Assert-Ollama {
         Write-Host '         Download: https://ollama.com/download/windows' -ForegroundColor Yellow
         exit 1
     }
-
-    # Check if server is reachable
     if (Test-Endpoint "$OllamaUrl/api/tags") {
-        Write-Ok 'Ollama server is running.'
-        return
+        Write-Ok 'Ollama server is running.'; return
     }
-
-    # Attempt to start it
     Write-Info 'Ollama not responding -- attempting to start...'
     try {
         $proc = Start-Process ollama -ArgumentList 'serve' -PassThru -WindowStyle Hidden
         Save-Pid 'ollama' $proc.Id
         for ($i = 0; $i -lt 15; $i++) {
             Start-Sleep -Seconds 1
-            if (Test-Endpoint "$OllamaUrl/api/tags") {
-                Write-Ok 'Ollama server started.'
-                return
-            }
+            if (Test-Endpoint "$OllamaUrl/api/tags") { Write-Ok 'Ollama server started.'; return }
         }
-        Write-Err 'Ollama did not become ready within 15 seconds.'
-        exit 1
-    } catch {
-        Write-Err "Failed to start Ollama: $_"
-        exit 1
-    }
+        Write-Err 'Ollama did not become ready within 15 seconds.'; exit 1
+    } catch { Write-Err "Failed to start Ollama: $_"; exit 1 }
 }
 
 function Assert-Models {
-    try {
-        $resp = Invoke-RestMethod -Uri "$OllamaUrl/api/tags" -TimeoutSec 5
-    } catch {
-        Write-Err 'Cannot reach Ollama API.'
-        return
-    }
+    try { $resp = Invoke-RestMethod -Uri "$OllamaUrl/api/tags" -TimeoutSec 5 }
+    catch { Write-Err 'Cannot reach Ollama API.'; return }
 
     $models = @($resp.models)
     if ($models.Count -gt 0) {
-        $names = ($models | ForEach-Object { $_.name }) -join ', '
-        Write-Ok "Models installed: $names"
+        Write-Ok "Models installed: $(($models | ForEach-Object { $_.name }) -join ', ')"
         return
     }
-
     Write-Warn 'No models installed.'
     Write-Host "         Recommended for 8 GB RAM: $DefaultModel" -ForegroundColor Yellow
     $ans = Read-Host "         Pull $DefaultModel now? [Y/n]"
-    if ($ans -eq '' -or $ans -match '^[Yy]') {
-        Invoke-PullModel $DefaultModel
-    } else {
-        Write-Warn "Skipped. Run:  .\start.ps1 -Pull <model>"
-    }
+    if ($ans -eq '' -or $ans -match '^[Yy]') { Invoke-PullModel $DefaultModel }
+    else { Write-Warn 'Skipped. Run:  .\start.ps1 -Pull <model>' }
 }
 
 function Invoke-PullModel ([string]$Model) {
@@ -138,25 +107,18 @@ function Invoke-PullModel ([string]$Model) {
         & ollama pull $Model
         if ($LASTEXITCODE -eq 0) { Write-Ok "$Model pulled successfully." }
         else { Write-Err "ollama pull exited with code $LASTEXITCODE" }
-    } catch {
-        Write-Err "Failed to pull model: $_"
-    }
+    } catch { Write-Err "Failed to pull model: $_" }
 }
 
 # ── Services ───────────────────────────────────────────────
 function Start-WebDashboard {
     $webDir = Join-Path $ScriptDir 'web'
     if (-not (Test-Path (Join-Path $webDir 'index.html'))) {
-        Write-Warn 'web/index.html not found -- skipping dashboard.'
-        return
+        Write-Warn 'web/index.html not found -- skipping dashboard.'; return
     }
-
-    # Already serving?
     if (Test-Endpoint "http://localhost:$WebPort") {
-        Write-Ok "Dashboard already serving on :$WebPort"
-        return
+        Write-Ok "Dashboard already serving on :$WebPort"; return
     }
-
     # Try Python first
     $py = Get-Command python -ErrorAction SilentlyContinue
     if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
@@ -168,11 +130,9 @@ function Start-WebDashboard {
         Save-Pid 'webserver' $proc.Id
         Start-Sleep -Seconds 1
         if (Test-Endpoint "http://localhost:$WebPort") {
-            Write-Ok "Dashboard ready at http://localhost:$WebPort"
-            return
+            Write-Ok "Dashboard ready at http://localhost:$WebPort"; return
         }
     }
-
     # Fallback: npx serve (Node.js)
     $npx = Get-Command npx -ErrorAction SilentlyContinue
     if ($npx) {
@@ -183,43 +143,33 @@ function Start-WebDashboard {
         Save-Pid 'webserver' $proc.Id
         Start-Sleep -Seconds 2
         if (Test-Endpoint "http://localhost:$WebPort") {
-            Write-Ok "Dashboard ready at http://localhost:$WebPort"
-            return
+            Write-Ok "Dashboard ready at http://localhost:$WebPort"; return
         }
     }
-
     Write-Err 'Neither Python nor Node.js found -- cannot serve dashboard.'
     Write-Host '         Install Python: https://python.org' -ForegroundColor Yellow
 }
 
 function Start-GatewayService {
     if (Test-Endpoint 'http://localhost:18789/health') {
-        Write-Ok 'Gateway already running on :18789'
-        return
+        Write-Ok 'Gateway already running on :18789'; return
     }
     $cmd = Get-Command openclaw -ErrorAction SilentlyContinue
-    if (-not $cmd) {
-        Write-Warn 'openclaw CLI not found -- skipping gateway.'
-        return
-    }
+    if (-not $cmd) { Write-Warn 'openclaw CLI not found -- skipping gateway.'; return }
     Write-Info 'Starting OpenClaw gateway on :18789...'
     $proc = Start-Process openclaw `
         -ArgumentList 'gateway run --bind loopback --port 18789' `
         -PassThru -WindowStyle Hidden
     Save-Pid 'gateway' $proc.Id
     Start-Sleep -Seconds 2
-    if (Test-Endpoint 'http://localhost:18789/health') {
-        Write-Ok 'Gateway running on :18789'
-    } else {
-        Write-Warn 'Gateway may still be starting -- check back shortly.'
-    }
+    if (Test-Endpoint 'http://localhost:18789/health') { Write-Ok 'Gateway running on :18789' }
+    else { Write-Warn 'Gateway may still be starting -- check back shortly.' }
 }
 
 # ── Stop / Status ──────────────────────────────────────────
 function Stop-AllServices {
     Write-Info 'Stopping OpenClaw services...'
     'webserver', 'gateway', 'ollama' | ForEach-Object { Stop-NamedService $_ }
-    # Belt-and-suspenders: kill stray listeners on our ports
     Get-Process -Name python*, node -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -match "http\.server $WebPort|serve.*$WebPort" } |
         Stop-Process -Force -ErrorAction SilentlyContinue
@@ -251,12 +201,9 @@ if ($Stop)   { Show-Banner; Stop-AllServices; exit 0 }
 if ($Status) { Show-Banner; Show-Status; exit 0 }
 if ($Pull)   { Show-Banner; Assert-Ollama; Invoke-PullModel $Pull; exit 0 }
 
-# Default: start everything
 Show-Banner
-
 $env:OLLAMA_API_KEY = 'ollama-local'
 $env:OLLAMA_ORIGINS = '*'
-
 Assert-Ollama
 Assert-Models
 Start-WebDashboard
