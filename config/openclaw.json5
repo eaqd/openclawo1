@@ -1,0 +1,44 @@
+{
+  // OpenClaw Configuration — Ollama (Local LLM)
+  // Docs: https://docs.openclaw.ai/providers/ollama
+
+  // ── Model Provider ────────────────────────────────────────
+  providers: {
+    ollama: {
+      baseUrl: "http://ollama:11434",
+      models: {
+        default: "qwen2.5-coder:3b",
+        fallback: "phi3:mini"
+      }
+    }
+  },
+
+  // Use Ollama as the default provider
+  defaultProvider: "ollama",
+
+  // ── Channels ──────────────────────────────────────────────
+  channels: {
+    terminal: {
+      enabled: true
+    },
+    telegram: {
+      enabled: true,
+      configFile: "telegram.json5"
+    }
+  },
+
+  // ── Skills ────────────────────────────────────────────────
+  skills: {
+    // Load bundled skills
+    bundled: true,
+    // Additional skill directories
+    extraDirs: [
+      "/home/openclaw/.openclaw/skills"
+    ]
+  },
+
+  // ── General ───────────────────────────────────────────────
+  logging: {
+    level: "info"
+  }
+}

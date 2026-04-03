@@ -1,0 +1,19 @@
+{
+  // Telegram Bot Configuration
+  // Get a bot token from @BotFather: https://t.me/BotFather
+  //
+  // Set these values via environment variables in .env:
+  //   TELEGRAM_BOT_TOKEN=your-bot-token
+  //   TELEGRAM_ALLOWED_USERS=123456789,987654321
+
+  // Bot token (reads from environment variable)
+  botToken: "${TELEGRAM_BOT_TOKEN}",
+
+  // Comma-separated list of allowed Telegram user IDs
+  // Leave empty to allow all users (not recommended for production)
+  allowedUsers: "${TELEGRAM_ALLOWED_USERS}",
+
+  // Bot behavior
+  parseMode: "Markdown",
+  maxMessageLength: 4096
+}

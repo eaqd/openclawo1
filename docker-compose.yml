@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  # ── Ollama: Local LLM inference engine ─────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: openclaw-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - claw-net
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  # ── Model Initializer: Pulls the default model on first run ─
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: openclaw-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - claw-net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling model: ${OLLAMA_MODEL:-qwen2.5-coder:3b}..."
+        ollama pull ${OLLAMA_MODEL:-qwen2.5-coder:3b} --host http://ollama:11434
+        echo "Model ready!"
+    restart: "no"
+
+  # ── OpenClaw: AI Assistant ─────────────────────────────────
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openclaw-app
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      - OPENCLAW_LOG_LEVEL=${OPENCLAW_LOG_LEVEL:-info}
+    volumes:
+      - openclaw-config:/home/openclaw/.openclaw
+      - openclaw-workspace:/home/openclaw/.openclaw/workspace
+      - ./skills:/home/openclaw/.openclaw/skills:ro
+    networks:
+      - claw-net
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    stdin_open: true
+    tty: true
+
+volumes:
+  ollama-data:
+    driver: local
+  openclaw-config:
+    driver: local
+  openclaw-workspace:
+    driver: local
+
+networks:
+  claw-net:
+    driver: bridge
